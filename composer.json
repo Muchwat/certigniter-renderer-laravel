@@ -1,0 +1,38 @@
+{
+    "name": "certigniter/laravel-certificate-renderer",
+    "description": "Decrypt, parse, and render Certigniter .igniter certificate files as PDFs from any Laravel app.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "certigniter", "certificate", "igniter", "pdf"],
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^11.0|^12.0",
+        "barryvdh/laravel-dompdf": "^2.0|^3.0",
+        "simplesoftwareio/simple-qrcode": "^4.2",
+        "picqer/php-barcode-generator": "^3.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Certigniter\\CertificateRenderer\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Certigniter\\CertificateRenderer\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Certigniter\\CertificateRenderer\\CertificateRendererServiceProvider"
+            ],
+            "aliases": {
+                "Certigniter": "Certigniter\\CertificateRenderer\\Facades\\Certigniter"
+            }
+        }
+    },
+    "minimum-stability": "stable"
+}
