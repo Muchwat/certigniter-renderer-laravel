@@ -20,8 +20,7 @@ class DesignElement
         public float $height,
         public array $properties = [],
         public ?array $childrenIds = null,
-    ) {
-    }
+    ) {}
 
     public static function fromArray(array $data): self
     {
@@ -68,6 +67,53 @@ class DesignElement
     public function isTextLike(): bool
     {
         return in_array($this->type, ['text', 'placeholder_text', 'dynamic_text'], true);
+    }
+
+    /**
+     * Content alignment saved by Certigniter's Content position control.
+     *
+     * Older projects do not contain this property. Keep their established
+     * behaviour by deriving text's horizontal fallback from paragraph
+     * alignment, while images continue to default to the centre of the box.
+     */
+    public function contentAlignment(): string
+    {
+        $stored = $this->property('contentAlignment');
+        $valid = [
+            'topLeft', 'topCenter', 'topRight',
+            'centerLeft', 'center', 'centerRight',
+            'bottomLeft', 'bottomCenter', 'bottomRight',
+        ];
+
+        if (is_string($stored) && in_array($stored, $valid, true)) {
+            return $stored;
+        }
+
+        if ($this->isTextLike()) {
+            return match ($this->property('textAlign', 'left')) {
+                'center' => 'center',
+                'right' => 'centerRight',
+                default => 'centerLeft',
+            };
+        }
+
+        return 'center';
+    }
+
+    /** @return array{0: float, 1: float} Horizontal and vertical factors in the 0..1 range. */
+    public function contentAlignmentFactors(): array
+    {
+        return match ($this->contentAlignment()) {
+            'topLeft' => [0.0, 0.0],
+            'topCenter' => [0.5, 0.0],
+            'topRight' => [1.0, 0.0],
+            'centerLeft' => [0.0, 0.5],
+            'centerRight' => [1.0, 0.5],
+            'bottomLeft' => [0.0, 1.0],
+            'bottomCenter' => [0.5, 1.0],
+            'bottomRight' => [1.0, 1.0],
+            default => [0.5, 0.5],
+        };
     }
 
     public function centerX(): float

@@ -8,7 +8,7 @@ Decrypt, parse, and render [Certigniter](https://github.com/) `.igniter` certifi
 - Parses the project JSON into typed PHP objects.
 - Composes group rotation/opacity onto their children (Certigniter's own bulk-export pipeline has a known bug where it skips this — this package does it correctly by default).
 - Resolves recipient merge fields for bulk issuance (`variableName` on text elements, `{{token}}`/`<token>` on QR/barcode data).
-- Renders everything — text (incl. font family/weight/style/align/line-height/letter-spacing/underline/strikethrough/shadow), images, QR codes, and barcodes (all 7 symbologies Certigniter supports, not just Code128) — to a PDF via dompdf.
+- Renders everything — text (incl. font family/weight/style/align/line-height/letter-spacing/underline/strikethrough/shadow and controllable bottom borders), vector rectangles/four-sided polygons, images, QR codes, and barcodes (all 7 symbologies Certigniter supports, not just Code128) — to a PDF via dompdf.
 - Degrades gracefully: an image with no embedded bytes, or a barcode whose data can't be encoded in its symbology, is skipped with a warning instead of failing the whole render.
 
 ## Installation

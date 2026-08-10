@@ -16,7 +16,7 @@ class QrCodeRenderer
 {
     private const ERROR_CORRECTION_LEVELS = ['L', 'M', 'Q', 'H'];
 
-    public static function pngDataUri(
+    public static function svgDataUri(
         string $data,
         int $sizePx,
         array $foreground,
@@ -25,18 +25,14 @@ class QrCodeRenderer
     ): string {
         $level = self::ERROR_CORRECTION_LEVELS[$errorCorrectionLevel] ?? 'L';
 
-        $png = QrCode::format('png')
+        $svg = QrCode::format('svg')
             ->size(max(50, min(1000, $sizePx)))
-            ->margin(1)
+            ->margin(0)
             ->errorCorrection($level)
             ->color($foreground['r'], $foreground['g'], $foreground['b'])
             ->backgroundColor($background['r'], $background['g'], $background['b'])
             ->generate($data);
 
-        // generate() returns an Illuminate\Support\HtmlString wrapping the
-        // raw PNG bytes when that class is loaded (true in any Laravel
-        // app) rather than a plain string - cast explicitly rather than
-        // relying on base64_encode()'s implicit Stringable coercion.
-        return 'data:image/png;base64,'.base64_encode((string) $png);
+        return 'data:image/svg+xml;base64,'.base64_encode((string) $svg);
     }
 }

@@ -18,6 +18,8 @@ use Throwable;
 
 class CertificateRenderer
 {
+    public const FONT_HEIGHT_RATIO = 1.0;
+
     /** @var string[] non-fatal issues from the most recent render (e.g. an image that couldn't be resolved server-side) */
     private array $warnings = [];
 
@@ -28,17 +30,16 @@ class CertificateRenderer
         private readonly string $fallbackFontRelativePath,
         private readonly string $fontsBasePath,
         private readonly bool $composeGroupTransforms,
-    ) {
-    }
+    ) {}
 
     /**
      * Decrypt an .igniter file's raw content and render it straight to PDF
      * bytes. This is the one-call entry point most callers want.
      *
-     * @param array<string, string>|null $recipient a single row from a
-     *  recipient CSV (see RecipientMerge) - null for a static, single-copy
-     *  certificate with no merge fields resolved (any variableName/{{token}}
-     *  elements render literally empty/unsubstituted).
+     * @param  array<string, string>|null  $recipient  a single row from a
+     *                                                 recipient CSV (see RecipientMerge) - null for a static, single-copy
+     *                                                 certificate with no merge fields resolved (any variableName/{{token}}
+     *                                                 elements render literally empty/unsubstituted).
      */
     public function renderIgniterToPdf(string $encryptedIgniterContent, ?array $recipient = null, ?string $encryptionKey = null): string
     {
@@ -52,7 +53,7 @@ class CertificateRenderer
         $json = Encryption::decrypt($encryptedIgniterContent, $encryptionKey ?? $this->encryptionKey);
         $decoded = json_decode($json, true);
 
-        if (!is_array($decoded)) {
+        if (! is_array($decoded)) {
             throw new RuntimeException('Decrypted .igniter payload is not valid JSON.');
         }
 
@@ -73,11 +74,30 @@ class CertificateRenderer
 
         $imageSources = $this->resolveImageSources($elements);
         $codeSources = $this->resolveCodeSources($elements, $project);
-        $fonts = new FontRegistrar($this->fonts, $this->fallbackFontRelativePath, $this->fontsBasePath);
+        $fontCachePath = sys_get_temp_dir().'/certigniter-dompdf-fonts';
+        if (! is_dir($fontCachePath) && ! mkdir($fontCachePath, 0700, true) && ! is_dir($fontCachePath)) {
+            throw new RuntimeException("Unable to create the temporary font cache: {$fontCachePath}");
+        }
+        $fonts = new FontRegistrar(
+            $this->fonts,
+            $this->fallbackFontRelativePath,
+            $this->fontsBasePath,
+            $project->embeddedFonts,
+            $fontCachePath,
+        );
 
-        $options = new Options();
+        $options = new Options;
         $options->setIsRemoteEnabled(false);
         $options->setDefaultFont('Inter');
+        // Dompdf expands every font's measured line box by 10% by default.
+        // Certigniter's Flutter and package:pdf renderers use the font's
+        // actual metrics and then add only the saved `lineHeight` leading,
+        // so Dompdf's default made multi-line text progressively taller.
+        $options->setFontHeightRatio(self::FONT_HEIGHT_RATIO);
+        $options->setFontDir($fontCachePath);
+        $options->setFontCache($fontCachePath);
+        $options->setTempDir($fontCachePath);
+        $options->setChroot([$this->fontsBasePath, $fontCachePath]);
         $dompdf = new Dompdf($options);
         $fonts->registerAll($dompdf);
 
@@ -109,7 +129,7 @@ class CertificateRenderer
         return $this->warnings;
     }
 
-    /** @param DesignElement[] $elements @return array<string, string> element id => data: URI */
+    /** @param DesignElement[] $elements @return array<string, array{src: string, aspectRatio: ?float}> */
     private function resolveImageSources(array $elements): array
     {
         $sources = [];
@@ -124,7 +144,12 @@ class CertificateRenderer
             if (is_string($imageData) && $imageData !== '') {
                 $clean = str_contains($imageData, ',') ? substr($imageData, strpos($imageData, ',') + 1) : $imageData;
                 $mime = $this->sniffImageMime($clean) ?? 'image/png';
-                $sources[$element->id] = "data:{$mime};base64,{$clean}";
+                $bytes = base64_decode($clean, true);
+                $size = $bytes === false ? false : @getimagesizefromstring($bytes);
+                $sources[$element->id] = [
+                    'src' => "data:{$mime};base64,{$clean}",
+                    'aspectRatio' => is_array($size) && $size[1] > 0 ? $size[0] / $size[1] : null,
+                ];
 
                 continue;
             }
@@ -154,7 +179,7 @@ class CertificateRenderer
      * Code128 can) - degrades to a skip-and-warn instead of aborting the
      * entire render, the same way an unresolvable image does.
      *
-     * @param DesignElement[] $elements
+     * @param  DesignElement[]  $elements
      * @return array<string, string> element id => data: URI
      */
     private function resolveCodeSources(array $elements, CertificateProject $project): array
@@ -162,7 +187,7 @@ class CertificateRenderer
         $sources = [];
 
         foreach ($elements as $element) {
-            if (!in_array($element->type, ['qrcode', 'barcode'], true)) {
+            if (! in_array($element->type, ['qrcode', 'barcode'], true)) {
                 continue;
             }
 
@@ -174,7 +199,7 @@ class CertificateRenderer
                     $data = (string) $element->property('data', '');
                     $sizePx = (int) round(min($element->width, $element->height) * 3.78);
 
-                    $sources[$element->id] = QrCodeRenderer::pngDataUri(
+                    $sources[$element->id] = QrCodeRenderer::svgDataUri(
                         $data !== '' ? $data : 'certigniter',
                         $sizePx,
                         $foreground,
@@ -194,9 +219,9 @@ class CertificateRenderer
                 }
             } catch (Throwable $e) {
                 $this->warnings[] = sprintf(
-                    "Element %s (%s): could not generate this code (%s) - it was skipped. This usually means the "
+                    'Element %s (%s): could not generate this code (%s) - it was skipped. This usually means the '
                     .'data contains characters its symbology/format can\'t encode (often a leftover, unresolved '
-                    ."{{token}}/<token> when no matching recipient value was supplied).",
+                    .'{{token}}/<token> when no matching recipient value was supplied).',
                     $element->id,
                     $element->type,
                     $e->getMessage(),

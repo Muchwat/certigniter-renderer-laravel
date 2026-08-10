@@ -9,7 +9,10 @@ namespace Certigniter\CertificateRenderer\Data;
  */
 class CertificateProject
 {
-    /** @param DesignElement[] $elements */
+    /**
+     * @param  DesignElement[]  $elements
+     * @param  array<string, array{normal?: string, bold?: string}>  $embeddedFonts
+     */
     public function __construct(
         public string $id,
         public string $title,
@@ -18,8 +21,8 @@ class CertificateProject
         public string $unit,
         public array $elements,
         public string $colorFormat = 'css-hex',
-    ) {
-    }
+        public array $embeddedFonts = [],
+    ) {}
 
     public static function fromArray(array $data): self
     {
@@ -40,11 +43,38 @@ class CertificateProject
             // Absent on files predating Certigniter's css-hex migration -
             // ColorConverter treats that as "still Flutter ARGB order".
             colorFormat: (string) ($data['color_format'] ?? 'argb'),
+            embeddedFonts: self::embeddedFontsFromArray($data['embedded_fonts'] ?? []),
         );
 
         $project->elements = self::withMigratedBackground($project->elements, $data, $project->width, $project->height);
 
         return $project;
+    }
+
+    /** @return array<string, array{normal?: string, bold?: string}> */
+    private static function embeddedFontsFromArray(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $fonts = [];
+        foreach ($value as $family => $variants) {
+            if (! is_string($family) || $family === '' || ! is_array($variants)) {
+                continue;
+            }
+            $valid = [];
+            foreach (['normal', 'bold'] as $weight) {
+                if (isset($variants[$weight]) && is_string($variants[$weight]) && $variants[$weight] !== '') {
+                    $valid[$weight] = $variants[$weight];
+                }
+            }
+            if ($valid !== []) {
+                $fonts[$family] = $valid;
+            }
+        }
+
+        return $fonts;
     }
 
     /**
@@ -55,7 +85,7 @@ class CertificateProject
      * wild indefinitely. Do the same here so the rest of the renderer only
      * ever has to deal with a flat element list.
      *
-     * @param DesignElement[] $elements
+     * @param  DesignElement[]  $elements
      * @return DesignElement[]
      */
     private static function withMigratedBackground(array $elements, array $data, float $width, float $height): array
@@ -99,13 +129,13 @@ class CertificateProject
 
         return array_values(array_filter(
             $this->elements,
-            fn (DesignElement $e) => !isset($childIds[$e->id]),
+            fn (DesignElement $e) => ! isset($childIds[$e->id]),
         ));
     }
 
     public function children(DesignElement $group): array
     {
-        if (!$group->childrenIds) {
+        if (! $group->childrenIds) {
             return [];
         }
 
@@ -115,5 +145,45 @@ class CertificateProject
             $this->elements,
             fn (DesignElement $e) => isset($wanted[$e->id]),
         ));
+    }
+
+    /**
+     * Every recipient-record column this project actually needs to fully
+     * resolve - i.e. what a caller's CSV/form needs a column for. Combines
+     * both of RecipientMerge's mechanisms: `variableName` on text-like
+     * elements (whole-field replacement) and `{{token}}`/`<token>` found
+     * inside qrcode/barcode `data` strings (inline substitution).
+     *
+     * @return string[] distinct names, in first-seen order
+     */
+    public function variableNames(): array
+    {
+        $names = [];
+
+        foreach ($this->elements as $element) {
+            if ($element->isTextLike()) {
+                $variableName = $element->property('variableName');
+
+                if (is_string($variableName) && $variableName !== '') {
+                    $names[$variableName] = true;
+                }
+
+                continue;
+            }
+
+            if (in_array($element->type, ['qrcode', 'barcode'], true)) {
+                $data = (string) $element->property('data', '');
+
+                if ($data !== '' && preg_match_all('/\{\{([^{}]+)\}\}|<([^<>]+)>/', $data, $matches)) {
+                    foreach ([...$matches[1], ...$matches[2]] as $token) {
+                        if ($token !== '') {
+                            $names[$token] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return array_keys($names);
     }
 }
