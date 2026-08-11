@@ -9,6 +9,8 @@ All notable changes to this package are documented here.
 - Issue-time image overrides keyed by stable element ID, allowing Laravel
   applications to replace logos, signatures, and path-only foreign images
   without modifying the `.igniter` template.
+- Metadata-only `elementCatalog()` and `getElementIds()` inspection helpers
+  with element types, labels, geometry, grouping, and image replacement hints.
 - Circle and rounded-rectangle image masks.
 - Horizontal and vertical mirroring for renderable elements.
 - Embedded project-font registration.

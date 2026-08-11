@@ -162,23 +162,49 @@ $metadata = [
     'height' => $project->height,
     'unit' => $project->unit,
     'recipient_fields' => $project->variableNames(),
-    'images' => array_values(array_map(
-        fn ($element) => [
-            'id' => $element->id,
-            'name' => $element->property('name'),
-            'has_embedded_data' => (bool) $element->property('imageData'),
-            'original_path' => $element->property('path'),
-        ],
-        array_filter(
-            $project->elements,
-            fn ($element) => $element->type === 'image',
-        ),
-    )),
+    'elements' => $project->elementCatalog(),
+    'replaceable_images' => $project->getElementIds('image'),
 ];
 ```
 
 Element IDs are stable within the template. Store or submit those IDs when
 the issuer chooses which logo or signature to replace.
+
+`elementCatalog()` and its intuitive alias `getElementIds()` return metadata,
+not just bare IDs, so a developer can build a useful selection screen:
+
+```php
+[
+    [
+        'id' => 'signature-uuid',
+        'type' => 'image',
+        'label' => 'Director signature',
+        'visible' => true,
+        'replaceable' => true,
+        'parentGroupId' => null,
+        'position' => [
+            'x' => 24.0,
+            'y' => 165.0,
+            'width' => 42.0,
+            'height' => 14.0,
+            'unit' => 'mm',
+        ],
+        'details' => [
+            'hasEmbeddedData' => false,
+            'hasLocalPath' => true,
+            'originalFilename' => 'director-signature.png',
+            'fit' => 'contain',
+            'maskShape' => 'none',
+            'replacementHint' => 'signature',
+        ],
+    ],
+]
+```
+
+The replacement hint is one of `background`, `logo`, `signature`, or `image`.
+The catalog also provides relevant summaries for text, variable text, shapes,
+QR codes, barcodes, and groups. It intentionally excludes embedded base64 font
+and image payloads, making it safe and lightweight to return as JSON.
 
 `parseIgniter()` returns a typed `Data\CertificateProject`; it does not render
 a PDF or mutate the uploaded file.
@@ -368,6 +394,17 @@ warnings(): array
 ```
 
 Returns non-fatal warnings from the most recent render call.
+
+### Project inspection helpers
+
+```php
+$project->variableNames(): array;
+$project->elementCatalog(?string $type = null): array;
+$project->getElementIds(?string $type = null): array;
+```
+
+`getElementIds()` is an alias of `elementCatalog()` and returns the same rich
+metadata. Use `getElementIds('image')` for a logo/signature replacement UI.
 
 ## Rendering compatibility
 

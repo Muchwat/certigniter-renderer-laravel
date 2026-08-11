@@ -148,6 +148,177 @@ class CertificateProject
     }
 
     /**
+     * A safe, metadata-only catalog for building developer tools and asset
+     * replacement forms. Embedded image/font bytes are intentionally omitted.
+     *
+     * @return array<int, array{
+     *   id: string,
+     *   type: string,
+     *   label: string,
+     *   visible: bool,
+     *   replaceable: bool,
+     *   parentGroupId: ?string,
+     *   position: array{x: float, y: float, width: float, height: float, unit: string},
+     *   details: array<string, mixed>
+     * }>
+     */
+    public function elementCatalog(?string $type = null): array
+    {
+        $parentGroups = [];
+        foreach ($this->elements as $element) {
+            if (! $element->isGroup()) {
+                continue;
+            }
+            foreach ($element->childrenIds ?? [] as $childId) {
+                $parentGroups[$childId] = $element->id;
+            }
+        }
+
+        $catalog = [];
+        $typeCounts = [];
+        foreach ($this->elements as $element) {
+            if ($type !== null && $element->type !== $type) {
+                continue;
+            }
+            $typeCounts[$element->type] = ($typeCounts[$element->type] ?? 0) + 1;
+
+            $catalog[] = [
+                'id' => $element->id,
+                'type' => $element->type,
+                'label' => $this->elementLabel($element, $typeCounts[$element->type]),
+                'visible' => $element->isVisible(),
+                'replaceable' => $element->type === 'image',
+                'parentGroupId' => $parentGroups[$element->id] ?? null,
+                'position' => [
+                    'x' => $element->x,
+                    'y' => $element->y,
+                    'width' => $element->width,
+                    'height' => $element->height,
+                    'unit' => $this->unit,
+                ],
+                'details' => $this->elementDetails($element),
+            ];
+        }
+
+        return $catalog;
+    }
+
+    /**
+     * Intuitive alias for integrations that start by asking for element IDs.
+     * Returns the full catalog rather than bare IDs so callers know what each
+     * ID represents. Pass a type such as `image` to filter the result.
+     *
+     * @see self::elementCatalog()
+     */
+    public function getElementIds(?string $type = null): array
+    {
+        return $this->elementCatalog($type);
+    }
+
+    private function elementLabel(DesignElement $element, int $number): string
+    {
+        $name = trim((string) $element->property('name', ''));
+        if ($name !== '') {
+            return $name;
+        }
+
+        if ($element->type === 'text') {
+            $text = trim((string) $element->property('text', ''));
+            if ($text !== '') {
+                return $this->shortPreview($text);
+            }
+        }
+
+        if ($element->isTextLike()) {
+            $variable = trim((string) $element->property('variableName', ''));
+            if ($variable !== '') {
+                return "Variable: {$variable}";
+            }
+        }
+
+        if ($element->type === 'image') {
+            $path = trim((string) $element->property('path', ''));
+            if ($path !== '') {
+                return pathinfo($path, PATHINFO_FILENAME) ?: "Image {$number}";
+            }
+        }
+
+        return ucfirst(str_replace('_', ' ', $element->type))." {$number}";
+    }
+
+    /** @return array<string, mixed> */
+    private function elementDetails(DesignElement $element): array
+    {
+        return match ($element->type) {
+            'image' => [
+                'hasEmbeddedData' => is_string($element->property('imageData'))
+                    && $element->property('imageData') !== '',
+                'hasLocalPath' => is_string($element->property('path'))
+                    && $element->property('path') !== '',
+                'originalFilename' => $element->property('path')
+                    ? basename((string) $element->property('path'))
+                    : null,
+                'fit' => $element->property('fit', 'contain'),
+                'maskShape' => $element->property('maskShape', 'none'),
+                'replacementHint' => $this->imageReplacementHint($element),
+            ],
+            'text', 'placeholder_text', 'dynamic_text' => [
+                'isVariable' => (string) $element->property('variableName', '') !== '',
+                'variableName' => $element->property('variableName'),
+                'textPreview' => $this->shortPreview((string) $element->property('text', '')),
+                'fontFamily' => $element->property('fontFamily'),
+            ],
+            'shape' => [
+                'shapeType' => $element->property('shapeType', 'rectangle'),
+            ],
+            'qrcode' => [
+                'dataPreview' => $this->shortPreview((string) $element->property('data', '')),
+            ],
+            'barcode' => [
+                'dataPreview' => $this->shortPreview((string) $element->property('data', '')),
+                'barcodeType' => $element->property('barcodeType', 'code128'),
+            ],
+            'group' => [
+                'childIds' => $element->childrenIds ?? [],
+            ],
+            default => [],
+        };
+    }
+
+    private function imageReplacementHint(DesignElement $element): string
+    {
+        if ($element->width >= $this->width * 0.9 && $element->height >= $this->height * 0.9) {
+            return 'background';
+        }
+
+        $description = strtolower(implode(' ', [
+            (string) $element->property('name', ''),
+            (string) $element->property('path', ''),
+        ]));
+        if (str_contains($description, 'sign')) {
+            return 'signature';
+        }
+        if (str_contains($description, 'logo') || str_contains($description, 'brand')) {
+            return 'logo';
+        }
+
+        return 'image';
+    }
+
+    private function shortPreview(string $value, int $limit = 80): string
+    {
+        $singleLine = trim((string) preg_replace('/\s+/', ' ', $value));
+        if (function_exists('mb_strlen') && mb_strlen($singleLine) > $limit) {
+            return mb_substr($singleLine, 0, $limit - 1).'…';
+        }
+        if (strlen($singleLine) > $limit) {
+            return substr($singleLine, 0, $limit - 3).'...';
+        }
+
+        return $singleLine;
+    }
+
+    /**
      * Every recipient-record column this project actually needs to fully
      * resolve - i.e. what a caller's CSV/form needs a column for. Combines
      * both of RecipientMerge's mechanisms: `variableName` on text-like
