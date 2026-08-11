@@ -20,6 +20,9 @@ class CertificateRenderer
 {
     public const FONT_HEIGHT_RATIO = 1.0;
 
+    /** Flutter logical pixels are 1/96 inch; PDF points are 1/72 inch. */
+    public const CANVAS_PX_TO_PDF_PT = 72 / 96;
+
     /** @var string[] non-fatal issues from the most recent render (e.g. an image that couldn't be resolved server-side) */
     private array $warnings = [];
 

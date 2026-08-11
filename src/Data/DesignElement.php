@@ -53,6 +53,16 @@ class DesignElement
         return (float) $this->property('opacity', 1.0);
     }
 
+    public function mirrorHorizontal(): bool
+    {
+        return $this->property('mirrorHorizontal', false) === true;
+    }
+
+    public function mirrorVertical(): bool
+    {
+        return $this->property('mirrorVertical', false) === true;
+    }
+
     /** Default true: absence of the key means "visible", not "hidden". */
     public function isVisible(): bool
     {

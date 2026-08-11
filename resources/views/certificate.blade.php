@@ -51,12 +51,21 @@
                     $element->x, $unit, $element->y, $unit, $element->width, $unit, $element->height, $unit,
                     $element->opacity(),
                 );
+                $transformParts = [];
                 if (abs($element->rotation()) > 0.001) {
-                    $wrapperStyle .= sprintf(
-                        ' transform: rotate(%sdeg); transform-origin: center;',
-                        $element->rotation(),
+                    $transformParts[] = sprintf('rotate(%sdeg)', $element->rotation());
+                }
+                if ($element->mirrorHorizontal() || $element->mirrorVertical()) {
+                    $transformParts[] = sprintf(
+                        'scale(%s,%s)',
+                        $element->mirrorHorizontal() ? -1 : 1,
+                        $element->mirrorVertical() ? -1 : 1,
                     );
                 }
+                $elementTransformStyle = $transformParts
+                    ? ' transform: '.implode(' ', $transformParts).'; transform-origin: center;'
+                    : '';
+                $wrapperStyle .= $elementTransformStyle;
             @endphp
 
             @if ($element->isTextLike())
@@ -65,9 +74,10 @@
                     $rawWeight = (string) $element->property('fontWeight', 'normal');
                     $isBold = str_contains(strtolower($rawWeight), 'bold')
                         || (is_numeric(str_replace('w', '', $rawWeight)) && (int) str_replace('w', '', $rawWeight) >= 600);
-                    // Certigniter's native PDF renderer passes fontSize
-                    // straight to pw.TextStyle, where it is already points.
-                    $fontSizePt = (float) $element->property('fontSize', 14.0);
+                    // Studio typography is stored as Flutter logical pixels
+                    // (96 DPI); CSS PDF typography uses points (72 DPI).
+                    $fontSizePt = (float) $element->property('fontSize', 14.0)
+                        * \Certigniter\CertificateRenderer\CertificateRenderer::CANVAS_PX_TO_PDF_PT;
                     // Dompdf's tableless line box places the glyph baseline
                     // lower than package:pdf by a stable fraction of the
                     // font size. Compensate inside the element box so both
@@ -78,10 +88,9 @@
                     );
                     $textAlign = $element->property('textAlign', 'left');
                     $lineHeight = (float) $element->property('lineHeight', 1.2);
-                    // pdf.TextStyle.lineSpacing is extra leading in points,
-                    // not CSS's unitless multiplier.
-                    $lineHeightPt = $fontSizePt + max(0, $lineHeight - 1);
-                    $letterSpacing = (float) $element->property('letterSpacing', 0);
+                    $lineHeightPt = $fontSizePt * max(0, $lineHeight);
+                    $letterSpacing = (float) $element->property('letterSpacing', 0)
+                        * \Certigniter\CertificateRenderer\CertificateRenderer::CANVAS_PX_TO_PDF_PT;
                     $decorations = [];
                     if ($element->property('underline', false)) {
                         $decorations[] = 'underline';
@@ -173,24 +182,32 @@
                         $shape['width'], $unit, $shape['height'], $unit,
                         $element->opacity(),
                     );
-                    if (abs($element->rotation()) > 0.001) {
-                        $shapeWrapperStyle .= sprintf(
-                            ' transform: rotate(%sdeg); transform-origin: center;',
-                            $element->rotation(),
-                        );
-                    }
+                    $shapeWrapperStyle .= $elementTransformStyle;
                 @endphp
                 <img src="{{ $shape['src'] }}" class="element" style="{{ $shapeWrapperStyle }}">
             @elseif ($element->type === 'image' && (!empty($element->property('imageData')) || !empty($element->property('path'))))
                 @php
                     $image = $imageSources[$element->id] ?? null;
                     $fit = $element->property('fit') === 'fill' ? 'fill' : 'contain';
+                    $maskShape = (string) $element->property('maskShape', 'none');
+                    $maskStyle = match ($maskShape) {
+                        'circle' => ' overflow: hidden; border-radius: 50%;',
+                        'roundedRectangle' => sprintf(
+                            ' overflow: hidden; border-radius: %s%s;',
+                            max(0, (float) $element->property('maskCornerRadius', 4.0)),
+                            $unit,
+                        ),
+                        default => '',
+                    };
                 @endphp
                 @if ($image)
-                    @if ($fit === 'fill')
-                        <img src="{{ $image['src'] }}" class="element" style="{{ $wrapperStyle }} width: {{ $element->width }}{{ $unit }}; height: {{ $element->height }}{{ $unit }};">
-                    @else
-                        @php
+                    @php
+                        if ($fit === 'fill') {
+                            $fittedWidth = $element->width;
+                            $fittedHeight = $element->height;
+                            $fittedLeft = 0;
+                            $fittedTop = 0;
+                        } else {
                             $imageRatio = $image['aspectRatio'];
                             $boxRatio = $element->height > 0 ? $element->width / $element->height : null;
                             if ($imageRatio && $boxRatio && $imageRatio > $boxRatio) {
@@ -206,11 +223,11 @@
                             [$contentX, $contentY] = $element->contentAlignmentFactors();
                             $fittedLeft = ($element->width - $fittedWidth) * $contentX;
                             $fittedTop = ($element->height - $fittedHeight) * $contentY;
-                        @endphp
-                        <div class="element" style="{{ $wrapperStyle }}">
-                            <img src="{{ $image['src'] }}" style="position: absolute; left: {{ $fittedLeft }}{{ $unit }}; top: {{ $fittedTop }}{{ $unit }}; width: {{ $fittedWidth }}{{ $unit }}; height: {{ $fittedHeight }}{{ $unit }};">
-                        </div>
-                    @endif
+                        }
+                    @endphp
+                    <div class="element" style="{{ $wrapperStyle }}{{ $maskStyle }}">
+                        <img src="{{ $image['src'] }}" style="position: absolute; left: {{ $fittedLeft }}{{ $unit }}; top: {{ $fittedTop }}{{ $unit }}; width: {{ $fittedWidth }}{{ $unit }}; height: {{ $fittedHeight }}{{ $unit }};">
+                    </div>
                 @endif
             @elseif ($element->type === 'qrcode' && isset($codeSources[$element->id]))
                 <img src="{{ $codeSources[$element->id] }}" class="element" style="{{ $wrapperStyle }}">

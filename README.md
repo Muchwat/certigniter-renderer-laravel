@@ -8,7 +8,7 @@ Decrypt, parse, and render [Certigniter](https://github.com/) `.igniter` certifi
 - Parses the project JSON into typed PHP objects.
 - Composes group rotation/opacity onto their children (Certigniter's own bulk-export pipeline has a known bug where it skips this — this package does it correctly by default).
 - Resolves recipient merge fields for bulk issuance (`variableName` on text elements, `{{token}}`/`<token>` on QR/barcode data).
-- Renders everything — text (incl. font family/weight/style/align/line-height/letter-spacing/underline/strikethrough/shadow and controllable bottom borders), vector rectangles/four-sided polygons, images, QR codes, and barcodes (all 7 symbologies Certigniter supports, not just Code128) — to a PDF via dompdf.
+- Renders everything — text (incl. font family/weight/style/align/line-height/letter-spacing/underline/strikethrough/shadow and controllable bottom borders), vector rectangles/four-sided polygons, images (fit/alignment plus circle and rounded-rectangle masks), QR codes, and barcodes (all 7 symbologies Certigniter supports, not just Code128) — to a PDF via dompdf.
 - Degrades gracefully: an image with no embedded bytes, or a barcode whose data can't be encoded in its symbology, is skipped with a warning instead of failing the whole render.
 
 ## Installation
@@ -113,6 +113,8 @@ Built directly from Certigniter's own source (models, `design_element.dart`, `ba
 - **Groups**: rotation and opacity are composed onto children using the same trigonometry as Certigniter's live canvas (`design_element.dart`), not the buggy flat-render some already-issued PDFs came from. Set `compose_group_transforms` to `false` in config if you specifically need byte-parity with those.
 - **Fonts**: the 5 families Certigniter itself bundles actual font files for (Playfair Display, Cormorant Garamond, Cinzel, Roboto, Montserrat) render identically to the desktop app, because this package bundles the same `.ttf` files. Any other `fontFamily` — a font that only happened to be installed on whichever machine last touched the project — falls back to Inter, exactly like Certigniter's own bulk export does when a font isn't found. **`.igniter` files never embed font bytes**, so this is a hard ceiling, not a bug to work around.
 - **Barcodes**: all 7 symbologies (`code39`, `ean13`, `ean8`, `upcA`, `itf`, `codabar`, `code128`) — notably *more* correct than Certigniter's own bulk-CSV export, which currently hardcodes Code128 regardless of the project's `barcodeType`.
+- **Image masks**: `maskShape` supports `none` (and absent/unknown values), `circle`, and `roundedRectangle`. Rounded masks use `maskCornerRadius` in the project unit, defaulting to `4`; image `fit` and content alignment are preserved inside the clipped element bounds.
+- **Element mirroring**: `mirrorHorizontal` and `mirrorVertical` flip any renderable element around its own center. Mirroring composes before the saved rotation, matching the Design Studio canvas and native PDF exporter.
 
 ## Known limitations (by design, not oversights)
 
