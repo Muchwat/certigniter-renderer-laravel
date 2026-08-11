@@ -151,18 +151,36 @@ class ShapeRenderer
         return sprintf('<polygon points="%s" />', $svgPoints);
     }
 
-    /** (topLeft, topRight, bottomRight, bottomLeft), clamped so opposite corners can't overlap. */
+    /**
+     * (topLeft, topRight, bottomRight, bottomLeft), proportionally scaled
+     * when adjacent radii do not fit. Flutter's RRect uses the same global
+     * scale, preserving asymmetric corner proportions.
+     */
     private static function cornerRadii(DesignElement $element, float $width, float $height): array
     {
         $legacy = max(0.0, (float) $element->property('cornerRadius', 0.0));
         $corner = fn (string $key) => max(0.0, (float) $element->property($key, $legacy));
-        $maxRadius = max(0.0, min($width, $height) / 2);
+        $tl = $corner('cornerRadiusTopLeft');
+        $tr = $corner('cornerRadiusTopRight');
+        $br = $corner('cornerRadiusBottomRight');
+        $bl = $corner('cornerRadiusBottomLeft');
+        $scale = 1.0;
+        $constrain = static function (float $available, float $requested) use (&$scale): void {
+            if ($requested > 0) {
+                $scale = min($scale, max(0.0, $available) / $requested);
+            }
+        };
+
+        $constrain($width, $tl + $tr);
+        $constrain($width, $bl + $br);
+        $constrain($height, $tl + $bl);
+        $constrain($height, $tr + $br);
 
         return [
-            min($corner('cornerRadiusTopLeft'), $maxRadius),
-            min($corner('cornerRadiusTopRight'), $maxRadius),
-            min($corner('cornerRadiusBottomRight'), $maxRadius),
-            min($corner('cornerRadiusBottomLeft'), $maxRadius),
+            $tl * $scale,
+            $tr * $scale,
+            $br * $scale,
+            $bl * $scale,
         ];
     }
 
@@ -178,18 +196,32 @@ class ShapeRenderer
             return sprintf('<rect x="%s" y="%s" width="%s" height="%s" rx="%s" />', $x0, $y0, $w, $h, $tl);
         }
 
-        // A plain <rect rx> only takes one uniform radius - build a path
-        // with one arc per corner instead.
+        // A plain <rect rx> only takes one uniform radius. Use cubic Bezier
+        // quarter-circles for differing corners instead of SVG `A` arcs:
+        // dompdf/php-svg-lib intermittently flattens consecutive arc commands
+        // into chords, producing bevelled alternating corners in the PDF.
+        // Cubics are supported reliably and approximate the same circles to
+        // substantially better than screen/PDF raster resolution.
+        $kappa = 0.5522847498307936;
+
         return '<path d="'
             .'M '.($x0 + $tl).' '.$y0.' '
             .'L '.($x0 + $w - $tr).' '.$y0.' '
-            ."A {$tr} {$tr} 0 0 1 ".($x0 + $w).' '.($y0 + $tr).' '
+            .'C '.($x0 + $w - $tr + $kappa * $tr).' '.$y0.' '
+                .($x0 + $w).' '.($y0 + $tr - $kappa * $tr).' '
+                .($x0 + $w).' '.($y0 + $tr).' '
             .'L '.($x0 + $w).' '.($y0 + $h - $br).' '
-            ."A {$br} {$br} 0 0 1 ".($x0 + $w - $br).' '.($y0 + $h).' '
+            .'C '.($x0 + $w).' '.($y0 + $h - $br + $kappa * $br).' '
+                .($x0 + $w - $br + $kappa * $br).' '.($y0 + $h).' '
+                .($x0 + $w - $br).' '.($y0 + $h).' '
             .'L '.($x0 + $bl).' '.($y0 + $h).' '
-            ."A {$bl} {$bl} 0 0 1 {$x0} ".($y0 + $h - $bl).' '
+            .'C '.($x0 + $bl - $kappa * $bl).' '.($y0 + $h).' '
+                .$x0.' '.($y0 + $h - $bl + $kappa * $bl).' '
+                .$x0.' '.($y0 + $h - $bl).' '
             ."L {$x0} ".($y0 + $tl).' '
-            ."A {$tl} {$tl} 0 0 1 ".($x0 + $tl).' '.$y0.' '
+            .'C '.$x0.' '.($y0 + $tl - $kappa * $tl).' '
+                .($x0 + $tl - $kappa * $tl).' '.$y0.' '
+                .($x0 + $tl).' '.$y0.' '
             .'Z" />';
     }
 
