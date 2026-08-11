@@ -1,131 +1,475 @@
-# certigniter/laravel-certificate-renderer
+# Certigniter Certificate Renderer for Laravel
 
-Decrypt, parse, and render [Certigniter](https://github.com/) `.igniter` certificate files as PDFs from any Laravel app — no Flutter runtime required. Built from a from-scratch read of the Certigniter desktop app's serialization + rendering code, so it aims for genuine feature parity rather than covering just the common cases.
+Render encrypted Certigniter `.igniter` certificate templates as PDFs in a
+Laravel application—without Flutter, the desktop application, or a browser.
 
-## What it does
+The package can:
 
-- Decrypts a `.igniter` file (AES-256-CBC, matching Certigniter's own `encryption_util.dart` byte-for-byte).
-- Parses the project JSON into typed PHP objects.
-- Composes group rotation/opacity onto their children (Certigniter's own bulk-export pipeline has a known bug where it skips this — this package does it correctly by default).
-- Resolves recipient merge fields for bulk issuance (`variableName` on text elements, `{{token}}`/`<token>` on QR/barcode data).
-- Renders everything — text (incl. font family/weight/style/align/line-height/letter-spacing/underline/strikethrough/shadow and controllable bottom borders), vector rectangles/four-sided polygons, images (fit/alignment plus circle and rounded-rectangle masks), QR codes, and barcodes (all 7 symbologies Certigniter supports, not just Code128) — to a PDF via dompdf.
-- Degrades gracefully: an image with no embedded bytes, or a barcode whose data can't be encoded in its symbology, is skipped with a warning instead of failing the whole render.
+- decrypt and inspect uploaded `.igniter` files;
+- discover recipient fields before issuing;
+- render individual or bulk certificates;
+- replace foreign logos, signatures, and other images at issue time;
+- render text, images, shapes, QR codes, barcodes, masks, mirrors, groups, and
+  embedded fonts;
+- report non-fatal rendering problems through a warnings API.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Quick start](#quick-start)
+- [Inspecting a template](#inspecting-a-template)
+- [Recipient data](#recipient-data)
+- [Replacing logos and signatures](#replacing-logos-and-signatures)
+- [Bulk issuance](#bulk-issuance)
+- [Warnings and error handling](#warnings-and-error-handling)
+- [Public API](#public-api)
+- [Rendering compatibility](#rendering-compatibility)
+- [Security and production guidance](#security-and-production-guidance)
+- [Troubleshooting](#troubleshooting)
+- [Testing](#testing)
+
+## Requirements
+
+- PHP 8.2 or newer
+- Laravel 11 or 12
+- A writable system temporary directory for Dompdf's font cache
+- The PHP extensions required by Dompdf, Simple QR Code, and the selected
+  image formats
 
 ## Installation
 
-This package isn't published to Packagist yet. Point Composer at it directly:
+The package is not on Packagist yet. Install it from GitHub with a Composer
+VCS repository:
 
-```jsonc
-// composer.json
+```json
 {
     "repositories": [
-        { "type": "path", "url": "packages/certigniter/laravel-certificate-renderer" }
+        {
+            "type": "vcs",
+            "url": "https://github.com/Muchwat/certigniter-certificate-renderer.git"
+        }
     ],
     "require": {
-        "certigniter/laravel-certificate-renderer": "@dev"
+        "certigniter/laravel-certificate-renderer": "dev-main"
     }
 }
 ```
 
 ```bash
-composer require certigniter/laravel-certificate-renderer:@dev
+composer update certigniter/laravel-certificate-renderer
 ```
 
-Laravel's package auto-discovery registers the service provider and `Certigniter` facade automatically.
+For local package development, use a path repository instead:
+
+```json
+{
+    "repositories": [
+        {
+            "type": "path",
+            "url": "packages/certigniter/laravel-certificate-renderer",
+            "options": { "symlink": true }
+        }
+    ]
+}
+```
+
+Laravel package discovery registers the service provider and `Certigniter`
+facade automatically.
 
 ## Configuration
+
+Publish the configuration file:
 
 ```bash
 php artisan vendor:publish --tag=certigniter-config
 ```
 
-**Set `CERTIGNITER_ENCRYPTION_KEY` in every environment that needs to open real `.igniter` files.** This is a *shared secret*, not a per-app secret like `APP_KEY` — it must match the key configured in the Certigniter desktop app (`lib/config.dart`'s `encryptionKey`) exactly, byte for byte. The package ships with that key as a fallback default so it works out of the box against an unmodified Certigniter build, but don't rely on that in production — if you ever need to rotate it, you'll want it out of source control.
+Set the shared Certigniter encryption key in `.env`:
 
 ```env
-CERTIGNITER_ENCRYPTION_KEY=your-32-byte-shared-key-here
+CERTIGNITER_ENCRYPTION_KEY=your-32-byte-shared-key
 ```
 
-## Usage
+This is not Laravel's `APP_KEY`. It must exactly match the `encryptionKey`
+used by the Certigniter application that created the file. A wrong key causes
+decryption to fail before parsing or rendering begins.
 
-### Render a single (static) certificate
+The published configuration also controls:
+
+- bundled font-family mappings;
+- the fallback font;
+- composition of parent-group rotation and opacity.
+
+Views can be published only when a project genuinely needs to customize the
+renderer markup:
+
+```bash
+php artisan vendor:publish --tag=certigniter-views
+```
+
+Prefer the package view unless you are prepared to maintain rendering parity
+when new element properties are added.
+
+## Quick start
+
+Inject `CertificateRenderer`, read the encrypted upload, and return the PDF:
+
+```php
+use Certigniter\CertificateRenderer\CertificateRenderer;
+use Illuminate\Http\Request;
+
+final class CertificateController
+{
+    public function render(Request $request, CertificateRenderer $renderer)
+    {
+        $request->validate([
+            'template' => ['required', 'file'],
+        ]);
+
+        $encrypted = $request->file('template')->get();
+        $pdf = $renderer->renderIgniterToPdf($encrypted);
+
+        return response($pdf, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="certificate.pdf"',
+        ]);
+    }
+}
+```
+
+The facade provides the same methods:
 
 ```php
 use Certigniter\CertificateRenderer\Facades\Certigniter;
 
-$pdfBytes = Certigniter::renderIgniterToPdf(file_get_contents($request->file('igniter_file')->getRealPath()));
-
-return response($pdfBytes, 200, ['Content-Type' => 'application/pdf']);
+$pdf = Certigniter::renderIgniterToPdf($encrypted);
 ```
 
-Or via dependency injection:
+## Inspecting a template
+
+Parse once before rendering when the web application needs to build a form,
+CSV template, or image-replacement screen:
 
 ```php
-use Certigniter\CertificateRenderer\CertificateRenderer;
+$project = $renderer->parseIgniter($encrypted);
 
-public function show(CertificateRenderer $renderer)
-{
-    $pdf = $renderer->renderIgniterToPdf($encryptedFileContents);
-    // ...
-}
+$metadata = [
+    'id' => $project->id,
+    'title' => $project->title,
+    'width' => $project->width,
+    'height' => $project->height,
+    'unit' => $project->unit,
+    'recipient_fields' => $project->variableNames(),
+    'images' => array_values(array_map(
+        fn ($element) => [
+            'id' => $element->id,
+            'name' => $element->property('name'),
+            'has_embedded_data' => (bool) $element->property('imageData'),
+            'original_path' => $element->property('path'),
+        ],
+        array_filter(
+            $project->elements,
+            fn ($element) => $element->type === 'image',
+        ),
+    )),
+];
 ```
 
-Any `variableName`/`{{token}}` placeholders render literally unresolved (e.g. a text element shows an empty string, a QR/barcode `data` field keeps the literal `{{Recipient Name}}` text) — this is correct behavior for a template preview, not a bug.
+Element IDs are stable within the template. Store or submit those IDs when
+the issuer chooses which logo or signature to replace.
 
-### Bulk issuance with a recipient record
+`parseIgniter()` returns a typed `Data\CertificateProject`; it does not render
+a PDF or mutate the uploaded file.
+
+## Recipient data
+
+Pass one flat associative array for one certificate:
 
 ```php
-$pdf = Certigniter::renderIgniterToPdf($encryptedFileContents, recipient: [
+$recipient = [
     'Recipient Name' => 'Ada Lovelace',
     'Certificate ID' => 'CERT-0001',
-]);
+    'Issue Date' => '2026-08-11',
+];
+
+$pdf = $renderer->renderIgniterToPdf(
+    $encrypted,
+    recipient: $recipient,
+);
 ```
 
-`$recipient` is a flat `[column => value]` array — typically one row from a parsed CSV. Matching is case-insensitive and trimmed for `variableName` (whole-field text replacement) and case-sensitive/exact for `{{token}}`/`<token>` (inline substitution in QR/barcode data) — this mirrors Certigniter's own two distinct merge mechanisms exactly; see `Support\RecipientMerge` for the full rules.
+There are two merge mechanisms because that is how Certigniter stores fields:
 
-### Checking for skipped elements
+| Template element | Stored form | Matching behavior |
+|---|---|---|
+| Variable text | `variableName: "Recipient Name"` | Case-insensitive and trimmed |
+| QR/barcode data | `{{Certificate ID}}` or `<Certificate ID>` | Exact token replacement |
+
+Use `$project->variableNames()` to obtain the distinct fields required by
+both mechanisms in template order.
+
+When no recipient is supplied, variable text renders empty and QR/barcode
+tokens remain unresolved. That is normally suitable only for structural
+template previews.
+
+## Replacing logos and signatures
+
+Templates created elsewhere may contain the wrong branding or a local path
+such as `/Users/designer/Desktop/signature.png`. Server-side code cannot read
+that foreign path. Supply replacement bytes keyed by the image element ID:
 
 ```php
-$pdf = $renderer->renderIgniterToPdf($encrypted);
+$request->validate([
+    'logo' => ['nullable', 'image', 'max:10240'],
+    'signature' => ['nullable', 'image', 'max:10240'],
+]);
 
-foreach ($renderer->warnings() as $warning) {
-    Log::warning($warning);
+$imageOverrides = array_filter([
+    'logo-element-id' => $request->file('logo')
+        ? base64_encode($request->file('logo')->get())
+        : null,
+    'signature-element-id' => $request->file('signature')
+        ? base64_encode($request->file('signature')->get())
+        : null,
+]);
+
+$pdf = $renderer->renderIgniterToPdf(
+    $encrypted,
+    recipient: $recipient,
+    imageOverrides: $imageOverrides,
+);
+```
+
+Raw base64 or a `data:image/...;base64,...` URI is accepted. The renderer:
+
+1. finds the image by element ID;
+2. clones that render element;
+3. replaces `imageData` and ignores its original local path;
+4. preserves position, size, fit, alignment, masks, opacity, rotation, and
+   mirroring;
+5. leaves the parsed project and uploaded `.igniter` file unchanged.
+
+Unknown IDs and IDs belonging to non-image elements are ignored. Validate
+upload MIME type and size in the host Laravel application before encoding.
+
+## Bulk issuance
+
+For bulk work, decrypt and parse once, then reuse the project and image map:
+
+```php
+$project = $renderer->parseIgniter($encrypted);
+$imageOverrides = [
+    'logo-element-id' => base64_encode($request->file('logo')->get()),
+];
+
+foreach ($recipients as $index => $recipient) {
+    $pdf = $renderer->renderProjectToPdf(
+        $project,
+        recipient: $recipient,
+        imageOverrides: $imageOverrides,
+    );
+
+    $zip->addFromString("certificate-{$index}.pdf", $pdf);
+
+    foreach ($renderer->warnings() as $warning) {
+        logger()->warning($warning, ['row' => $index]);
+    }
 }
 ```
 
-`warnings()` reflects the most recent render call. Common causes:
-- An image element only has a local `path` (from the machine that created the project) and no embedded `imageData` — `.igniter` files don't carry image bytes for path-only images, so there's nothing to render server-side. Ask users to re-save/export with images embedded.
-- A QR/barcode's `data`, after any recipient substitution, contains characters its format can't encode (frequently an unresolved `{{token}}` left over when no recipient was supplied, or a genuinely invalid symbology/data combination).
+Parsing once avoids repeatedly decrypting and decoding the same template.
+Each `renderProjectToPdf()` call creates an independent PDF and resets the
+warning list.
 
-### Lower-level access
+For large batches, process work in a queue, place limits on template/image
+uploads, and write PDFs incrementally rather than retaining every PDF in RAM.
+
+## Warnings and error handling
+
+Invalid encryption, malformed JSON, or an unrecoverable rendering failure
+throws an exception. Catch it at the request or queue-job boundary:
 
 ```php
-$project = $renderer->parseIgniter($encrypted); // Data\CertificateProject - decrypted + parsed, not yet rendered
-$pdf = $renderer->renderProjectToPdf($project, $recipient); // render an already-parsed project
+try {
+    $pdf = $renderer->renderIgniterToPdf($encrypted, $recipient);
+} catch (Throwable $error) {
+    report($error);
+
+    return response()->json([
+        'message' => 'The certificate could not be rendered.',
+    ], 422);
+}
 ```
 
-Useful if you want to inspect/validate a project (e.g. list its `variableName`s to build a CSV template) before rendering.
+Recoverable element failures do not abort the certificate. Inspect warnings
+after each render:
 
-## What's faithfully supported
+```php
+foreach ($renderer->warnings() as $warning) {
+    logger()->warning('Certificate element skipped', [
+        'warning' => $warning,
+    ]);
+}
+```
 
-Built directly from Certigniter's own source (models, `design_element.dart`, `batch_pdf_generator.dart`) — see the extensive doc comments throughout `src/` for exactly which behavior each piece replicates and why. Highlights:
+Typical warnings include:
 
-- **Colors**: both the current `css-hex` (`#RRGGBBAA`, alpha last) and legacy Flutter-native (`#AARRGGBB`, alpha first) formats, auto-detected via the project's `color_format` field.
-- **Groups**: rotation and opacity are composed onto children using the same trigonometry as Certigniter's live canvas (`design_element.dart`), not the buggy flat-render some already-issued PDFs came from. Set `compose_group_transforms` to `false` in config if you specifically need byte-parity with those.
-- **Fonts**: the 5 families Certigniter itself bundles actual font files for (Playfair Display, Cormorant Garamond, Cinzel, Roboto, Montserrat) render identically to the desktop app, because this package bundles the same `.ttf` files. Any other `fontFamily` — a font that only happened to be installed on whichever machine last touched the project — falls back to Inter, exactly like Certigniter's own bulk export does when a font isn't found. **`.igniter` files never embed font bytes**, so this is a hard ceiling, not a bug to work around.
-- **Barcodes**: all 7 symbologies (`code39`, `ean13`, `ean8`, `upcA`, `itf`, `codabar`, `code128`) — notably *more* correct than Certigniter's own bulk-CSV export, which currently hardcodes Code128 regardless of the project's `barcodeType`.
-- **Image masks**: `maskShape` supports `none` (and absent/unknown values), `circle`, and `roundedRectangle`. Rounded masks use `maskCornerRadius` in the project unit, defaulting to `4`; image `fit` and content alignment are preserved inside the clipped element bounds.
-- **Element mirroring**: `mirrorHorizontal` and `mirrorVertical` flip any renderable element around its own center. Mirroring composes before the saved rotation, matching the Design Studio canvas and native PDF exporter.
+- an image contains only a path from another computer and no replacement was
+  provided;
+- a QR/barcode token was not resolved;
+- barcode data is invalid for its selected symbology.
 
-## Known limitations (by design, not oversights)
+## Public API
 
-- **Rotation and gradients render through dompdf's CSS engine**, which has partial/approximate support for `transform: rotate()` and no support for `background-clip: text` (needed for a true gradient text fill — this package falls back to the gradient's first color stop as a flat color instead of emitting CSS that would silently render nothing). This was a deliberate trade-off for a zero-extra-server-dependency renderer; pixel-perfect fidelity for heavily rotated/gradient-filled designs would need a raster-compositing renderer (Imagick/GD-based) instead.
-- **Path-only images can't be resolved.** `.igniter` files store either embedded `imageData` (base64, portable) or a local file `path` (from the machine that created the project). Only the former works server-side — see "Checking for skipped elements" above.
-- **`fontSize` is converted from Certigniter's canvas px (96dpi) to PDF points (72dpi)** for parity with what the Design Studio editor actually shows. Certigniter's own bulk-CSV export has a bug where it skips this conversion (text renders ~1.33× too large in already-issued bulk PDFs) — this package does the conversion correctly, so a certificate rendered here will look right relative to the editor, not necessarily byte-identical to an already-issued bulk PDF.
+### `renderIgniterToPdf()`
+
+```php
+renderIgniterToPdf(
+    string $encryptedIgniterContent,
+    ?array $recipient = null,
+    ?string $encryptionKey = null,
+    array $imageOverrides = [],
+): string
+```
+
+Convenience entry point that decrypts, parses, merges, overrides images, and
+returns PDF bytes. Pass a per-request encryption key only when intentionally
+supporting files from a different trusted key domain.
+
+### `parseIgniter()`
+
+```php
+parseIgniter(
+    string $encryptedIgniterContent,
+    ?string $encryptionKey = null,
+): Data\CertificateProject
+```
+
+Decrypts and parses without rendering.
+
+### `renderProjectToPdf()`
+
+```php
+renderProjectToPdf(
+    Data\CertificateProject $project,
+    ?array $recipient = null,
+    array $imageOverrides = [],
+): string
+```
+
+Preferred rendering method after a project has already been inspected.
+
+### `warnings()`
+
+```php
+warnings(): array
+```
+
+Returns non-fatal warnings from the most recent render call.
+
+## Rendering compatibility
+
+| Feature | Support |
+|---|---|
+| Current CSS and legacy Flutter color formats | Yes |
+| Static and variable text | Yes |
+| Font family, weight, style, alignment | Yes |
+| Line height and letter spacing | Yes |
+| Underline, strike-through, shadow | Yes |
+| Text bottom borders | Yes |
+| Rectangle and four-sided polygon shapes | Yes |
+| Per-corner rounded rectangles | Yes |
+| Images with contain/fill and content alignment | Yes |
+| Circle and rounded-rectangle image masks | Yes |
+| Horizontal and vertical element mirroring | Yes |
+| QR codes | Yes |
+| Code39, EAN-13, EAN-8, UPC-A, ITF, Codabar, Code128 | Yes |
+| Group rotation and opacity composition | Yes, configurable |
+| Embedded project fonts | Yes |
+| Bundled Certigniter font families | Yes |
+
+Typography values are converted from Certigniter's 96-DPI canvas pixels to
+72-DPI PDF points. This prevents the approximately 1.33× text enlargement
+seen in older exporters and keeps titles aligned with the Design Studio.
+
+Current projects may contain `embedded_fonts`; these are registered for the
+render. For projects that only store a font-family name, the package uses its
+bundled Playfair Display, Cormorant Garamond, Cinzel, Roboto, and Montserrat
+files, then falls back to Inter for unavailable system fonts.
+
+### Known limitations
+
+- Dompdf approximates some CSS rotation behavior.
+- Dompdf cannot faithfully reproduce gradient-filled text, so the first
+  gradient stop is used as a flat fallback color.
+- A path-only image from another computer cannot render unless the host app
+  supplies an image override.
+- The project model is currently single-page/single-sided.
+
+## Security and production guidance
+
+- Treat `CERTIGNITER_ENCRYPTION_KEY` as a shared secret. Do not commit it.
+- Validate uploaded file size and MIME type before reading it into memory.
+- Do not trust original image paths from uploaded templates. Remote access is
+  disabled and Dompdf is restricted to package font/cache directories.
+- Authorize who may render, inspect, or replace certificate assets.
+- Escape user-facing metadata when displaying project titles or element names.
+- Use queues and execution limits for bulk issuance.
+- Record warnings and issuance failures for auditability.
+- Use unique, sanitized filenames when creating ZIP archives.
+
+## Troubleshooting
+
+### The `.igniter` file cannot be decrypted
+
+Confirm `CERTIGNITER_ENCRYPTION_KEY` matches the Certigniter application that
+created the file. Clear Laravel's cached configuration after changing `.env`:
+
+```bash
+php artisan config:clear
+```
+
+### A logo or signature is missing
+
+Inspect the image element. If it has `path` but no `imageData`, upload a
+replacement and pass it in `imageOverrides` using that element's ID.
+
+### Text is a different size from the editor
+
+Update to the latest package revision. Current versions convert canvas pixels
+to PDF points. Also verify the template's font is embedded or included in
+`config/certigniter.php`.
+
+### A barcode is skipped
+
+Ensure all merge tokens were supplied and the resulting value is valid for
+the selected barcode format. Read `warnings()` for the element ID and cause.
+
+### A custom font falls back to Inter
+
+The server needs actual font bytes. Use a template with `embedded_fonts`, add
+the licensed font files to a maintained package customization, or choose a
+bundled family.
 
 ## Testing
 
-Package logic is exercised via the host app's own Pest suite (`tests/Feature/Certigniter/`), including a real `.igniter` fixture extracted from a production payload (`tests/Fixtures/real-certificate.igniter`) for genuine interop coverage rather than only self-consistent round-trips:
+In this repository, the package is exercised through the Laravel host app's
+Pest integration suite, including a real encrypted fixture and tests for
+single rendering, bulk rendering, image overrides, typography, shapes, masks,
+mirrors, fonts, QR codes, and barcodes:
 
 ```bash
 php artisan test tests/Feature/Certigniter
 ```
+
+Run the host endpoint tests as well when changing upload or controller logic:
+
+```bash
+php artisan test tests/Feature/CertificateControllerTest.php
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

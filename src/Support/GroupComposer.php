@@ -24,9 +24,9 @@ class GroupComposer
 {
     /**
      * @return DesignElement[] flat, render-ready list in original z-order:
-     *  group elements themselves removed (they have no visual), grouped
-     *  children replaced with their composed effective x/y/rotation/
-     *  opacity, everything else untouched.
+     *                         group elements themselves removed (they have no visual), grouped
+     *                         children replaced with their composed effective x/y/rotation/
+     *                         opacity, everything else untouched.
      */
     public static function resolve(CertificateProject $project, bool $compose = true): array
     {
@@ -34,14 +34,14 @@ class GroupComposer
         $hiddenGroupChildIds = [];
 
         foreach ($project->elements as $element) {
-            if (!$element->isGroup()) {
+            if (! $element->isGroup()) {
                 continue;
             }
 
             foreach ($project->children($element) as $child) {
                 $groupsByChildId[$child->id] = $element;
 
-                if (!$element->isVisible()) {
+                if (! $element->isVisible()) {
                     // Certigniter's bulk export doesn't propagate a hidden
                     // group's visibility to its children (a gap in that
                     // pipeline, not a deliberate feature) - a renderer
@@ -66,7 +66,7 @@ class GroupComposer
 
             $group = $groupsByChildId[$element->id] ?? null;
 
-            if ($group === null || !$compose) {
+            if ($group === null || ! $compose) {
                 $resolved[] = $element;
 
                 continue;

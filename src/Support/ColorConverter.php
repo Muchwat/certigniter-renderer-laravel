@@ -84,7 +84,7 @@ class ColorConverter
             $digits = $digits[0].$digits[0].$digits[1].$digits[1].$digits[2].$digits[2];
         }
 
-        if (!in_array(strlen($digits), [6, 8], true) || !ctype_xdigit($digits)) {
+        if (! in_array(strlen($digits), [6, 8], true) || ! ctype_xdigit($digits)) {
             return null;
         }
 

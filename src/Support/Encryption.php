@@ -19,7 +19,7 @@ class Encryption
     {
         $envelope = json_decode($encryptedJson, true);
 
-        if (!is_array($envelope) || !isset($envelope['iv'], $envelope['value'])) {
+        if (! is_array($envelope) || ! isset($envelope['iv'], $envelope['value'])) {
             throw new RuntimeException('Not a valid .igniter envelope: expected {"iv": ..., "value": ...} JSON.');
         }
 

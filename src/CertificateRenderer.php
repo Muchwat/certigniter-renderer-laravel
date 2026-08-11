@@ -43,14 +43,23 @@ class CertificateRenderer
      *                                                 recipient CSV (see RecipientMerge) - null for a static, single-copy
      *                                                 certificate with no merge fields resolved (any variableName/{{token}}
      *                                                 elements render literally empty/unsubstituted).
+     * @param  array<string, string>  $imageOverrides  image element ID => raw base64 or data-URI replacement bytes
      */
-    public function renderIgniterToPdf(string $encryptedIgniterContent, ?array $recipient = null, ?string $encryptionKey = null): string
-    {
+    public function renderIgniterToPdf(
+        string $encryptedIgniterContent,
+        ?array $recipient = null,
+        ?string $encryptionKey = null,
+        array $imageOverrides = [],
+    ): string {
         $project = $this->parseIgniter($encryptedIgniterContent, $encryptionKey);
 
-        return $this->renderProjectToPdf($project, $recipient);
+        return $this->renderProjectToPdf($project, $recipient, $imageOverrides);
     }
 
+    /**
+     * Decrypt and parse an .igniter payload without rendering it. Useful for
+     * discovering recipient fields and replaceable image element IDs.
+     */
     public function parseIgniter(string $encryptedIgniterContent, ?string $encryptionKey = null): CertificateProject
     {
         $json = Encryption::decrypt($encryptedIgniterContent, $encryptionKey ?? $this->encryptionKey);
@@ -63,13 +72,20 @@ class CertificateRenderer
         return CertificateProject::fromArray($decoded);
     }
 
-    /** @param array<string, string>|null $recipient */
-    public function renderProjectToPdf(CertificateProject $project, ?array $recipient = null): string
-    {
+    /**
+     * @param  array<string, string>|null  $recipient
+     * @param  array<string, string>  $imageOverrides  element ID => base64 image bytes
+     */
+    public function renderProjectToPdf(
+        CertificateProject $project,
+        ?array $recipient = null,
+        array $imageOverrides = [],
+    ): string {
         $this->warnings = [];
 
         $elements = GroupComposer::resolve($project, $this->composeGroupTransforms);
         $elements = array_values(array_filter($elements, fn (DesignElement $e) => $e->isVisible()));
+        $elements = $this->applyImageOverrides($elements, $imageOverrides);
 
         if ($recipient !== null) {
             $elements = array_map(fn (DesignElement $e) => RecipientMerge::apply($e, $recipient), $elements);
@@ -124,6 +140,34 @@ class CertificateRenderer
         $dompdf->render();
 
         return $dompdf->output();
+    }
+
+    /**
+     * Replace embedded image bytes by stable canvas element ID without
+     * mutating the parsed marketplace template object.
+     *
+     * @param  DesignElement[]  $elements
+     * @param  array<string, string>  $overrides
+     * @return DesignElement[]
+     */
+    private function applyImageOverrides(array $elements, array $overrides): array
+    {
+        if ($overrides === []) {
+            return $elements;
+        }
+
+        return array_map(function (DesignElement $element) use ($overrides): DesignElement {
+            $replacement = $overrides[$element->id] ?? null;
+            if ($element->type !== 'image' || ! is_string($replacement) || trim($replacement) === '') {
+                return $element;
+            }
+
+            $clone = clone $element;
+            $clone->properties['imageData'] = preg_replace('#^data:image/[^;]+;base64,#i', '', trim($replacement));
+            unset($clone->properties['path']);
+
+            return $clone;
+        }, $elements);
     }
 
     /** @return string[] */

@@ -41,7 +41,7 @@ class RecipientMerge
     {
         $variableName = $element->property('variableName');
 
-        if (!is_string($variableName) || $variableName === '') {
+        if (! is_string($variableName) || $variableName === '') {
             return $element;
         }
 
@@ -55,7 +55,7 @@ class RecipientMerge
     {
         $data = $element->property('data');
 
-        if (!is_string($data) || $data === '') {
+        if (! is_string($data) || $data === '') {
             return $element;
         }
 

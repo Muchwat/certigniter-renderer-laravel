@@ -33,7 +33,7 @@ class BarcodeRenderer
     ): string {
         $type = self::TYPE_MAP[$barcodeType] ?? BarcodeGenerator::TYPE_CODE_128;
 
-        $generator = new BarcodeGeneratorPNG();
+        $generator = new BarcodeGeneratorPNG;
         $color = [$foreground['r'], $foreground['g'], $foreground['b']];
 
         // widthFactor is per-bar-element pixel width, not a total-image
