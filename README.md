@@ -40,25 +40,8 @@ The package can:
 
 ## Installation
 
-The package is not on Packagist yet. Install it from GitHub with a Composer
-VCS repository:
-
-```json
-{
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/Muchwat/certigniter-certificate-renderer.git"
-        }
-    ],
-    "require": {
-        "certigniter/laravel-certificate-renderer": "dev-main"
-    }
-}
-```
-
 ```bash
-composer update certigniter/laravel-certificate-renderer
+composer require certigniter/laravel-certificate-renderer
 ```
 
 For local package development, use a path repository instead:
