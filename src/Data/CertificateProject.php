@@ -272,6 +272,8 @@ class CertificateProject
                 'shapeType' => $element->property('shapeType', 'rectangle'),
             ],
             'qrcode' => [
+                'qrType' => $element->property('qrType', 'custom'),
+                'isAuthenticationLink' => $element->isQrAuthenticationLink(),
                 'dataPreview' => $this->shortPreview((string) $element->property('data', '')),
             ],
             'barcode' => [
@@ -356,5 +358,23 @@ class CertificateProject
         }
 
         return array_keys($names);
+    }
+
+    /**
+     * The element ID of this project's "Authentication link" QR code, if
+     * it has one (the Design Studio allows at most one per project). Null
+     * when the project has no such element. Use this to key the
+     * `$qrCodeOverrides` array passed to CertificateRenderer without the
+     * caller needing to already know the element's ID.
+     */
+    public function authenticationQrElementId(): ?string
+    {
+        foreach ($this->elements as $element) {
+            if ($element->isQrAuthenticationLink()) {
+                return $element->id;
+            }
+        }
+
+        return null;
     }
 }

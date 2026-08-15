@@ -9,6 +9,8 @@ The package can:
 - discover recipient fields before issuing;
 - render individual or bulk certificates;
 - replace foreign logos, signatures, and other images at issue time;
+- assign application-generated QR code values (e.g. unique verification
+  links) at issue time;
 - render text, images, shapes, QR codes, barcodes, masks, mirrors, groups, and
   embedded fonts;
 - report non-fatal rendering problems through a warnings API.
@@ -21,6 +23,7 @@ The package can:
 - [Quick start](#quick-start)
 - [Inspecting a template](#inspecting-a-template)
 - [Recipient data](#recipient-data)
+- [Dynamic QR code values](#dynamic-qr-code-values)
 - [Replacing logos and signatures](#replacing-logos-and-signatures)
 - [Bulk issuance](#bulk-issuance)
 - [Warnings and error handling](#warnings-and-error-handling)
@@ -223,6 +226,51 @@ When no recipient is supplied, variable text renders empty and QR/barcode
 tokens remain unresolved. That is normally suitable only for structural
 template previews.
 
+## Dynamic QR code values
+
+A QR element's Design Studio "Content source" is either:
+
+- **Custom value** - a static string, optionally containing `{{token}}`/
+  `<token>` placeholders resolved from `recipient` like any other
+  QR/barcode data (see above); or
+- **Authentication link** - the element intentionally stores no `data` at
+  all. Its real payload doesn't exist until the certificate is issued, so
+  it must be supplied by your application at render time - typically a
+  unique verification URL such as `https://you.example.com/verify/{id}`.
+  A project has at most one of these (the Design Studio enforces it).
+
+Use `$project->authenticationQrElementId()` to find whether (and where)
+a parsed project has one, then pass the value you generated in
+`qrCodeOverrides`, keyed by that element ID:
+
+```php
+$project = $renderer->parseIgniter($encrypted);
+$qrElementId = $project->authenticationQrElementId(); // null if the template has none
+
+$qrCodeOverrides = $qrElementId !== null
+    ? [$qrElementId => route('certificate.verify', ['id' => $certificateId])]
+    : [];
+
+$pdf = $renderer->renderProjectToPdf(
+    $project,
+    recipient: $recipient,
+    qrCodeOverrides: $qrCodeOverrides,
+);
+```
+
+`qrCodeOverrides` accepts any qrcode element ID, not only an authentication
+link - an explicit override always wins over both a static `data` value and
+`{{token}}`/`<token>` substitution, so it also works as a direct escape
+hatch for a value your application computed rather than one that came from
+a recipient record. If an authentication-link QR code has no override
+supplied for it, it is skipped with a warning (see below) rather than
+encoding an empty or placeholder string into the certificate.
+
+For bulk issuance, each recipient's link is normally unique per row - build
+the override map fresh inside the loop, e.g. from a `Verification URL`
+column already present in that row's data, or by minting one from your own
+application state per iteration.
+
 ## Replacing logos and signatures
 
 Templates created elsewhere may contain the wrong branding or a local path
@@ -328,7 +376,9 @@ Typical warnings include:
 - an image contains only a path from another computer and no replacement was
   provided;
 - a QR/barcode token was not resolved;
-- barcode data is invalid for its selected symbology.
+- barcode data is invalid for its selected symbology;
+- an "Authentication link" QR code had no value supplied for it in
+  `qrCodeOverrides`.
 
 ## Public API
 
@@ -340,12 +390,13 @@ renderIgniterToPdf(
     ?array $recipient = null,
     ?string $encryptionKey = null,
     array $imageOverrides = [],
+    array $qrCodeOverrides = [],
 ): string
 ```
 
-Convenience entry point that decrypts, parses, merges, overrides images, and
-returns PDF bytes. Pass a per-request encryption key only when intentionally
-supporting files from a different trusted key domain.
+Convenience entry point that decrypts, parses, merges, overrides images and
+QR code values, and returns PDF bytes. Pass a per-request encryption key only
+when intentionally supporting files from a different trusted key domain.
 
 ### `parseIgniter()`
 
@@ -365,6 +416,7 @@ renderProjectToPdf(
     Data\CertificateProject $project,
     ?array $recipient = null,
     array $imageOverrides = [],
+    array $qrCodeOverrides = [],
 ): string
 ```
 
@@ -384,10 +436,14 @@ Returns non-fatal warnings from the most recent render call.
 $project->variableNames(): array;
 $project->elementCatalog(?string $type = null): array;
 $project->getElementIds(?string $type = null): array;
+$project->authenticationQrElementId(): ?string;
 ```
 
 `getElementIds()` is an alias of `elementCatalog()` and returns the same rich
 metadata. Use `getElementIds('image')` for a logo/signature replacement UI.
+`authenticationQrElementId()` returns the element ID of the project's
+"Authentication link" QR code, or `null` if it has none - see
+[Dynamic QR code values](#dynamic-qr-code-values).
 
 ## Rendering compatibility
 
