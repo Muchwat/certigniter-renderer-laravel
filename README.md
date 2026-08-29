@@ -531,10 +531,24 @@ bundled family.
 
 ## Testing
 
-In this repository, the package is exercised through the Laravel host app's
-Pest integration suite, including a real encrypted fixture and tests for
-single rendering, bulk rendering, image overrides, typography, shapes, masks,
-mirrors, fonts, QR codes, and barcodes:
+This package ships its own standalone PHPUnit suite (`tests/Unit`) for every
+class that works without a booted Laravel application - `ColorConverter`,
+`RecipientMerge`, `Encryption`, `GroupComposer`, `ShapeRenderer`,
+`CertificateProject`, `DesignElement`, `FontRegistrar`, and `BarcodeRenderer`.
+It runs standalone after `composer install`, with no Laravel app required -
+this is what a `composer require` install outside the Certigniter monorepo
+gets to verify its install:
+
+```bash
+vendor/bin/phpunit
+```
+
+`CertificateRenderer`, `CertificateRendererServiceProvider`, and
+`QrCodeRenderer` need a real Laravel container (view resolution, the
+simple-qrcode facade binding) and are exercised instead by this repository's
+own Laravel host app, via a Pest integration suite with a real encrypted
+fixture and tests for single rendering, bulk rendering, image overrides,
+typography, shapes, masks, mirrors, fonts, QR codes, and barcodes:
 
 ```bash
 php artisan test tests/Feature/Certigniter

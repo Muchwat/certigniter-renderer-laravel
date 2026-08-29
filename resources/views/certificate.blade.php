@@ -70,104 +70,24 @@
 
             @if ($element->isTextLike())
                 @php
-                    $fontFamily = $fonts->resolveFamily($element->property('fontFamily'));
-                    $rawWeight = (string) $element->property('fontWeight', 'normal');
-                    $isBold = str_contains(strtolower($rawWeight), 'bold')
-                        || (is_numeric(str_replace('w', '', $rawWeight)) && (int) str_replace('w', '', $rawWeight) >= 600);
-                    // Studio typography is stored as Flutter logical pixels
-                    // (96 DPI); CSS PDF typography uses points (72 DPI).
-                    $fontSizePt = (float) $element->property('fontSize', 14.0)
-                        * \Certigniter\CertificateRenderer\CertificateRenderer::CANVAS_PX_TO_PDF_PT;
-                    // Dompdf's tableless line box places the glyph baseline
-                    // lower than package:pdf by a stable fraction of the
-                    // font size. Compensate inside the element box so both
-                    // renderers share the same visual vertical center.
-                    $baselineCorrectionPt = $fontSizePt * 0.0875;
-                    $color = \Certigniter\CertificateRenderer\Support\ColorConverter::toCss(
-                        $element->property('color'), $project->colorFormat, '#000000',
+                    $text = \Certigniter\CertificateRenderer\Support\TextElementStyle::describe(
+                        $element, $project->colorFormat, $unit, $fonts,
                     );
-                    $textAlign = $element->property('textAlign', 'left');
-                    $lineHeight = (float) $element->property('lineHeight', 1.2);
-                    $lineHeightPt = $fontSizePt * max(0, $lineHeight);
-                    $letterSpacing = (float) $element->property('letterSpacing', 0)
-                        * \Certigniter\CertificateRenderer\CertificateRenderer::CANVAS_PX_TO_PDF_PT;
-                    $decorations = [];
-                    if ($element->property('underline', false)) {
-                        $decorations[] = 'underline';
-                    } elseif ($element->property('strikethrough', false)) {
-                        $decorations[] = 'line-through';
-                    }
-                    $shadow = $element->property('shadow');
-                    $shadowCss = '';
-                    if (is_array($shadow)) {
-                        $shadowColor = \Certigniter\CertificateRenderer\Support\ColorConverter::toCss(
-                            $shadow['color'] ?? null, $project->colorFormat, '#00000080',
-                        );
-                        $shadowCss = sprintf(
-                            'text-shadow: %s%s %s%s %s%s %s;',
-                            $shadow['offsetX'] ?? 0, $unit, $shadow['offsetY'] ?? 0, $unit, $shadow['blur'] ?? 0, $unit, $shadowColor,
-                        );
-                    }
-                    // Text gradients have no faithful dompdf equivalent (no
-                    // background-clip:text support) - fall back to the
-                    // gradient's first stop as a flat color rather than
-                    // emitting CSS that silently renders nothing.
-                    $gradient = $element->property('gradient');
-                    if (is_array($gradient) && !empty($gradient['colors'][0])) {
-                        $color = \Certigniter\CertificateRenderer\Support\ColorConverter::toCss(
-                            $gradient['colors'][0], $project->colorFormat, $color,
-                        );
-                    }
-                    [$contentX, $contentY] = $element->contentAlignmentFactors();
-                    $contentPosition = $contentX === 0.0
-                        ? 'left: 0;'
-                        : ($contentX === 1.0 ? 'right: 0;' : 'left: 50%;');
-                    $contentPosition .= $contentY === 0.0
-                        ? ' top: 0;'
-                        : ($contentY === 1.0 ? ' bottom: 0;' : ' top: 50%;');
-                    $contentTransforms = [];
-                    if ($contentX === 0.5) {
-                        $contentTransforms[] = 'translateX(-50%)';
-                    }
-                    if ($contentY === 0.5) {
-                        $contentTransforms[] = 'translateY(-50%)';
-                    }
-                    if ($contentTransforms) {
-                        $contentPosition .= ' transform: '.implode(' ', $contentTransforms).';';
-                    }
-                    $bottomBorderEnabled = (bool) $element->property('bottomBorderEnabled', false);
-                    $bottomBorderGap = max(0, (float) $element->property('bottomBorderGap', 1.5));
-                    $bottomBorderWidth = max(0.1, (float) $element->property('bottomBorderWidth', 0.4));
-                    $bottomBorderLeftPadding = max(0, (float) $element->property('bottomBorderLeftPadding', 0));
-                    $bottomBorderRightPadding = max(0, (float) $element->property('bottomBorderRightPadding', 0));
-                    $bottomBorderColor = \Certigniter\CertificateRenderer\Support\ColorConverter::toCss(
-                        $element->property('bottomBorderColor', $element->property('color')), $project->colorFormat, $color,
-                    );
-                    $bottomBorderStyle = $bottomBorderEnabled
-                        ? sprintf(
-                            ' padding-left: %s%s; padding-right: %s%s; padding-bottom: %s%s; border-bottom: %s%s solid %s;',
-                            $bottomBorderLeftPadding, $unit,
-                            $bottomBorderRightPadding, $unit,
-                            $bottomBorderGap, $unit,
-                            $bottomBorderWidth, $unit,
-                            $bottomBorderColor,
-                        )
-                        : '';
                 @endphp
                 <div class="element text-element"
                     style="{{ $wrapperStyle }}
-                        font-family: '{{ $fontFamily }}';
-                        font-size: {{ $fontSizePt }}pt;
-                        font-weight: {{ $isBold ? 700 : 400 }};
-                        font-style: {{ $element->property('fontStyle', 'normal') === 'italic' ? 'italic' : 'normal' }};
-                        color: {{ $color }};
-                        text-align: {{ in_array($textAlign, ['left', 'center', 'right', 'justify'], true) ? $textAlign : 'left' }};
-                        line-height: {{ $lineHeightPt }}pt;
-                        letter-spacing: {{ $letterSpacing }}pt;
-                        {{ $decorations ? 'text-decoration: '.implode(' ', $decorations).';' : '' }}
-                        {{ $shadowCss }}
-                        {{ $element->property('textResizeMode') === 'fixedSize' ? 'overflow: hidden;' : '' }}">
-                    <div class="text-content" style="{{ $contentPosition }} margin-top: -{{ $baselineCorrectionPt }}pt;{{ $bottomBorderStyle }}">{!! nl2br(e((string) $element->property('text', ''))) !!}</div>
+                        font-family: '{{ $text['fontFamily'] }}';
+                        font-size: {{ $text['fontSizePt'] }}pt;
+                        font-weight: {{ $text['fontWeight'] }};
+                        font-style: {{ $text['fontStyle'] }};
+                        color: {{ $text['color'] }};
+                        text-align: {{ $text['textAlign'] }};
+                        line-height: {{ $text['lineHeightPt'] }}pt;
+                        letter-spacing: {{ $text['letterSpacing'] }}pt;
+                        {{ $text['decorationCss'] }}
+                        {{ $text['shadowCss'] }}
+                        {{ $text['overflowCss'] }}">
+                    <div class="text-content" style="{{ $text['contentPositionCss'] }} margin-top: -{{ $text['baselineCorrectionPt'] }}pt;{{ $text['bottomBorderCss'] }}">{!! nl2br(e((string) $element->property('text', ''))) !!}</div>
                 </div>
             @elseif ($element->type === 'shape')
                 @php
@@ -188,45 +108,14 @@
             @elseif ($element->type === 'image' && (!empty($element->property('imageData')) || !empty($element->property('path'))))
                 @php
                     $image = $imageSources[$element->id] ?? null;
-                    $fit = $element->property('fit') === 'fill' ? 'fill' : 'contain';
-                    $maskShape = (string) $element->property('maskShape', 'none');
-                    $maskStyle = match ($maskShape) {
-                        'circle' => ' overflow: hidden; border-radius: 50%;',
-                        'roundedRectangle' => sprintf(
-                            ' overflow: hidden; border-radius: %s%s;',
-                            max(0, (float) $element->property('maskCornerRadius', 4.0)),
-                            $unit,
-                        ),
-                        default => '',
-                    };
+                    $maskStyle = \Certigniter\CertificateRenderer\Support\ImageElementLayout::maskCss($element, $unit);
                 @endphp
                 @if ($image)
                     @php
-                        if ($fit === 'fill') {
-                            $fittedWidth = $element->width;
-                            $fittedHeight = $element->height;
-                            $fittedLeft = 0;
-                            $fittedTop = 0;
-                        } else {
-                            $imageRatio = $image['aspectRatio'];
-                            $boxRatio = $element->height > 0 ? $element->width / $element->height : null;
-                            if ($imageRatio && $boxRatio && $imageRatio > $boxRatio) {
-                                $fittedWidth = $element->width;
-                                $fittedHeight = $element->width / $imageRatio;
-                            } elseif ($imageRatio) {
-                                $fittedHeight = $element->height;
-                                $fittedWidth = $element->height * $imageRatio;
-                            } else {
-                                $fittedWidth = $element->width;
-                                $fittedHeight = $element->height;
-                            }
-                            [$contentX, $contentY] = $element->contentAlignmentFactors();
-                            $fittedLeft = ($element->width - $fittedWidth) * $contentX;
-                            $fittedTop = ($element->height - $fittedHeight) * $contentY;
-                        }
+                        $fitted = \Certigniter\CertificateRenderer\Support\ImageElementLayout::fit($element, $image['aspectRatio']);
                     @endphp
                     <div class="element" style="{{ $wrapperStyle }}{{ $maskStyle }}">
-                        <img src="{{ $image['src'] }}" style="position: absolute; left: {{ $fittedLeft }}{{ $unit }}; top: {{ $fittedTop }}{{ $unit }}; width: {{ $fittedWidth }}{{ $unit }}; height: {{ $fittedHeight }}{{ $unit }};">
+                        <img src="{{ $image['src'] }}" style="position: absolute; left: {{ $fitted['left'] }}{{ $unit }}; top: {{ $fitted['top'] }}{{ $unit }}; width: {{ $fitted['width'] }}{{ $unit }}; height: {{ $fitted['height'] }}{{ $unit }};">
                     </div>
                 @endif
             @elseif ($element->type === 'qrcode' && isset($codeSources[$element->id]))

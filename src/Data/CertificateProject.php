@@ -117,22 +117,6 @@ class CertificateProject
         return [$backgroundElement, ...$elements];
     }
 
-    /** Top-level elements only (no grouped children) - used to drive the main render loop, which handles a group's children itself. */
-    public function topLevelElements(): array
-    {
-        $childIds = [];
-        foreach ($this->elements as $element) {
-            foreach ($element->childrenIds ?? [] as $childId) {
-                $childIds[$childId] = true;
-            }
-        }
-
-        return array_values(array_filter(
-            $this->elements,
-            fn (DesignElement $e) => ! isset($childIds[$e->id]),
-        ));
-    }
-
     public function children(DesignElement $group): array
     {
         if (! $group->childrenIds) {
