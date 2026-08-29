@@ -87,7 +87,7 @@
                         {{ $text['decorationCss'] }}
                         {{ $text['shadowCss'] }}
                         {{ $text['overflowCss'] }}">
-                    <div class="text-content" style="{{ $text['contentPositionCss'] }} margin-top: -{{ $text['baselineCorrectionPt'] }}pt;{{ $text['bottomBorderCss'] }}">{!! nl2br(e((string) $element->property('text', ''))) !!}</div>
+                    <div class="text-content" style="{{ $text['contentPositionCss'] }} margin-top: -{{ $text['baselineCorrectionPt'] }}pt;">{!! nl2br(e((string) $element->property('text', ''))) !!}{!! $text['bottomBorderHtml'] !!}</div>
                 </div>
             @elseif ($element->type === 'shape')
                 @php

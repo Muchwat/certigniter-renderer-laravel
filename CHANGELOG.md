@@ -43,6 +43,36 @@ All notable changes to this package are documented here.
 
 - `Certigniter` facade's `@method` docblock was missing the `$qrCodeOverrides`
   parameter added above, so IDE autocompletion for facade calls omitted it.
+- A text element's `bottomBorderEnabled` underline (and the text itself, when
+  centered) rendered slightly off-center in the PDF versus the Design
+  Studio/bulk-issuance pipeline. Root cause: dompdf mis-centers a `display:
+  table` box whose own `left: 50%; transform: translateX(-50%)` centering is
+  combined with `padding-left`/`padding-right` on that same box - the
+  padding is counted toward the shrink-to-fit width used to position the
+  box, but isn't painted as an inset, so the box lands off-center by
+  roughly the padding amount. The underline is now a sibling
+  `position: absolute` box with negative `left`/`right` offsets instead of
+  padding on the centered box, which doesn't participate in that box's
+  shrink-to-fit measurement at all and sidesteps the bug. Verified against
+  real dompdf output (rasterized, not just reasoned about) both in isolation
+  and against a real production `.igniter` file.
+- A text element's vertical centering drifted from the Design
+  Studio/Flutter-generated PDF for fonts with an unusual ascent/descent
+  split - most visibly blackletter and script display faces used for
+  titles/names, off by several points at large sizes. Root cause:
+  `baselineCorrectionPt` (compensating for dompdf's CSS line-box centering
+  differing from `package:pdf`'s tight-ink-bbox centering) was a single flat
+  fraction of font size, implicitly tuned for fonts with an ascent/descent
+  split resembling Roboto's - it doesn't hold for a font whose split differs
+  meaningfully. `FontRegistrar` now parses each registered font's real
+  ascent/descent from its own TTF `hhea` table and scales the correction
+  accordingly. Verified against a real production `.igniter` file (a
+  Strathmore CIPIT template using Old English Text MT for its title and
+  recipient-name elements): measured via `pdftotext -bbox` against the
+  Flutter-rendered reference, the title's vertical offset dropped from
+  5.46pt to 1.26pt and the recipient name's from 3.76pt to 0.87pt, with
+  zero change to already-correct body text in a standard font (Roboto/
+  AlbertSans).
 
 ## [1.0.0] - 2026-08-12
 

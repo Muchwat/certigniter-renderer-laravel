@@ -120,13 +120,13 @@ class TextElementStyleTest extends TestCase
         $this->assertSame($expected, $style['contentPositionCss']);
     }
 
-    public function test_bottom_border_css_is_empty_when_disabled(): void
+    public function test_bottom_border_html_is_empty_when_disabled(): void
     {
-        $this->assertSame('', $this->describe(['bottomBorderEnabled' => false])['bottomBorderCss']);
-        $this->assertSame('', $this->describe([])['bottomBorderCss']);
+        $this->assertSame('', $this->describe(['bottomBorderEnabled' => false])['bottomBorderHtml']);
+        $this->assertSame('', $this->describe([])['bottomBorderHtml']);
     }
 
-    public function test_bottom_border_css_uses_saved_values_when_enabled(): void
+    public function test_bottom_border_html_uses_saved_values_when_enabled(): void
     {
         $style = $this->describe([
             'bottomBorderEnabled' => true,
@@ -137,9 +137,13 @@ class TextElementStyleTest extends TestCase
             'bottomBorderColor' => '#2255AA',
         ]);
 
+        // A sibling position:absolute box (not padding on the centered/
+        // shrink-to-fit text box) - see the docblock in TextElementStyle
+        // for why: dompdf mis-centers a `display:table` box that combines
+        // `transform: translateX(-50%)` centering with its own padding.
         $this->assertSame(
-            ' padding-left: 5mm; padding-right: 3mm; padding-bottom: 2.5mm; border-bottom: 0.6mm solid #2255aa;',
-            $style['bottomBorderCss'],
+            '<div style="position: absolute; left: -5mm; right: -3mm; bottom: -2.5mm; border-bottom: 0.6mm solid #2255aa;"></div>',
+            $style['bottomBorderHtml'],
         );
     }
 
@@ -151,8 +155,8 @@ class TextElementStyleTest extends TestCase
             'bottomBorderWidth' => 0.0,
         ]);
 
-        $this->assertStringContainsString('padding-bottom: 0mm;', $style['bottomBorderCss']);
-        $this->assertStringContainsString('border-bottom: 0.1mm solid', $style['bottomBorderCss']);
+        $this->assertStringContainsString('bottom: -0mm;', $style['bottomBorderHtml']);
+        $this->assertStringContainsString('border-bottom: 0.1mm solid', $style['bottomBorderHtml']);
     }
 
     public function test_overflow_css_is_set_only_for_fixed_size_text_resize_mode(): void
@@ -162,8 +166,11 @@ class TextElementStyleTest extends TestCase
         $this->assertSame('', $this->describe([])['overflowCss']);
     }
 
-    public function test_baseline_correction_is_a_fixed_fraction_of_font_size(): void
+    public function test_baseline_correction_falls_back_to_the_reference_ratio_when_the_font_has_no_cached_metrics(): void
     {
+        // $this->fonts() never calls registerAll(), so FontRegistrar has no
+        // parsed ascent/descent for 'Roboto' to scale by - see
+        // FontRegistrarTest for the metrics-driven case.
         $style = $this->describe(['fontSize' => 20.0]);
 
         $this->assertEqualsWithDelta($style['fontSizePt'] * 0.0875, $style['baselineCorrectionPt'], 1e-9);

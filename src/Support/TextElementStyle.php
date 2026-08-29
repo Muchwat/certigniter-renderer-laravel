@@ -16,7 +16,7 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
  */
 class TextElementStyle
 {
-    /** @return array{fontFamily: string, fontSizePt: float, fontWeight: int, fontStyle: string, color: string, textAlign: string, lineHeightPt: float, letterSpacing: float, decorationCss: string, shadowCss: string, overflowCss: string, contentPositionCss: string, baselineCorrectionPt: float, bottomBorderCss: string} */
+    /** @return array{fontFamily: string, fontSizePt: float, fontWeight: int, fontStyle: string, color: string, textAlign: string, lineHeightPt: float, letterSpacing: float, decorationCss: string, shadowCss: string, overflowCss: string, contentPositionCss: string, baselineCorrectionPt: float, bottomBorderHtml: string} */
     public static function describe(DesignElement $element, string $colorFormat, string $unit, FontRegistrar $fonts): array
     {
         $fontFamily = $fonts->resolveFamily($element->property('fontFamily'));
@@ -29,10 +29,12 @@ class TextElementStyle
         $fontSizePt = (float) $element->property('fontSize', 14.0) * CertificateRenderer::CANVAS_PX_TO_PDF_PT;
 
         // Dompdf's tableless line box places the glyph baseline lower than
-        // package:pdf by a stable fraction of the font size. Compensate
-        // inside the element box so both renderers share the same visual
-        // vertical center.
-        $baselineCorrectionPt = $fontSizePt * 0.0875;
+        // package:pdf by a fraction of the font size that depends on the
+        // font's own ascent/descent split - see
+        // FontRegistrar::baselineCorrectionRatio() for why this isn't a
+        // flat constant. Compensate inside the element box so both
+        // renderers share the same visual vertical center.
+        $baselineCorrectionPt = $fontSizePt * $fonts->baselineCorrectionRatio($fontFamily);
 
         $color = ColorConverter::toCss($element->property('color'), $colorFormat, '#000000');
 
@@ -92,7 +94,7 @@ class TextElementStyle
         $overflowCss = $element->property('textResizeMode') === 'fixedSize' ? 'overflow: hidden;' : '';
 
         $bottomBorderEnabled = (bool) $element->property('bottomBorderEnabled', false);
-        $bottomBorderCss = '';
+        $bottomBorderHtml = '';
         if ($bottomBorderEnabled) {
             $bottomBorderGap = max(0, (float) $element->property('bottomBorderGap', 1.5));
             $bottomBorderWidth = max(0.1, (float) $element->property('bottomBorderWidth', 0.4));
@@ -101,8 +103,20 @@ class TextElementStyle
             $bottomBorderColor = ColorConverter::toCss(
                 $element->property('bottomBorderColor', $element->property('color')), $colorFormat, $color,
             );
-            $bottomBorderCss = sprintf(
-                ' padding-left: %s%s; padding-right: %s%s; padding-bottom: %s%s; border-bottom: %s%s solid %s;',
+            // A sibling position:absolute box, not padding on the centered/
+            // shrink-to-fit text box itself: dompdf mis-centers a `display:
+            // table` box whose own `left: 50%; transform: translateX(-50%)`
+            // centering is combined with padding-left/padding-right on that
+            // same box - the padding gets counted in the shrink-to-fit width
+            // used to position it, but isn't painted as an inset, so the
+            // whole (correctly-sized) box lands off-center by roughly the
+            // padding. A position:absolute child with negative left/right
+            // offsets extends past its parent without contributing to the
+            // parent's own shrink-to-fit measurement at all, sidestepping
+            // the bug entirely (verified against real dompdf output, not
+            // just reasoned about).
+            $bottomBorderHtml = sprintf(
+                '<div style="position: absolute; left: -%s%s; right: -%s%s; bottom: -%s%s; border-bottom: %s%s solid %s;"></div>',
                 $bottomBorderLeftPadding, $unit,
                 $bottomBorderRightPadding, $unit,
                 $bottomBorderGap, $unit,
@@ -125,7 +139,7 @@ class TextElementStyle
             'overflowCss' => $overflowCss,
             'contentPositionCss' => $contentPositionCss,
             'baselineCorrectionPt' => $baselineCorrectionPt,
-            'bottomBorderCss' => $bottomBorderCss,
+            'bottomBorderHtml' => $bottomBorderHtml,
         ];
     }
 }
