@@ -73,6 +73,23 @@ All notable changes to this package are documented here.
   5.46pt to 1.26pt and the recipient name's from 3.76pt to 0.87pt, with
   zero change to already-correct body text in a standard font (Roboto/
   AlbertSans).
+- A text element's `bottomBorderEnabled` underline could sit several points
+  below the text even with `bottomBorderGap: 0`, most visibly on a large
+  display font. Root cause: the underline was a sibling `<div>` inside
+  `.text-content` (a `display:table` box, for the shrink-to-fit centering
+  described above) - dompdf wraps *any* other child of a table box in its
+  own anonymous table row regardless of that child's `position:absolute`
+  status, which roughly doubles the table's rendered height and pushes a
+  sibling underline far below the text (confirmed by rendering an isolated
+  reproduction with a tinted background and measuring its real pixel
+  height, not just reasoned about). The underline is now `padding-left`/
+  `padding-right`/`padding-bottom`/`border-bottom` on an inline `<span>`
+  that wraps the text itself instead of a separate sibling element, which
+  sidesteps the anonymous-row bug entirely and - unlike padding on
+  `.text-content` itself - doesn't feed into its shrink-to-fit *width*
+  measurement, so the horizontal-centering bug fixed above doesn't
+  reappear either. Verified against the same real production `.igniter`
+  file.
 
 ## [1.0.0] - 2026-08-12
 

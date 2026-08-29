@@ -120,13 +120,13 @@ class TextElementStyleTest extends TestCase
         $this->assertSame($expected, $style['contentPositionCss']);
     }
 
-    public function test_bottom_border_html_is_empty_when_disabled(): void
+    public function test_bottom_border_span_css_is_empty_when_disabled(): void
     {
-        $this->assertSame('', $this->describe(['bottomBorderEnabled' => false])['bottomBorderHtml']);
-        $this->assertSame('', $this->describe([])['bottomBorderHtml']);
+        $this->assertSame('', $this->describe(['bottomBorderEnabled' => false])['bottomBorderSpanCss']);
+        $this->assertSame('', $this->describe([])['bottomBorderSpanCss']);
     }
 
-    public function test_bottom_border_html_uses_saved_values_when_enabled(): void
+    public function test_bottom_border_span_css_uses_saved_values_when_enabled(): void
     {
         $style = $this->describe([
             'bottomBorderEnabled' => true,
@@ -137,13 +137,15 @@ class TextElementStyleTest extends TestCase
             'bottomBorderColor' => '#2255AA',
         ]);
 
-        // A sibling position:absolute box (not padding on the centered/
-        // shrink-to-fit text box) - see the docblock in TextElementStyle
-        // for why: dompdf mis-centers a `display:table` box that combines
-        // `transform: translateX(-50%)` centering with its own padding.
+        // padding + border-bottom on the inline <span> wrapping the text
+        // itself (not a separate sibling element) - see the docblock in
+        // TextElementStyle for why: dompdf wraps any other child of the
+        // centered/shrink-to-fit `display:table` text box in its own
+        // anonymous table row, which roughly doubles that box's rendered
+        // height and pushes a sibling underline far below the text.
         $this->assertSame(
-            '<div style="position: absolute; left: -5mm; right: -3mm; bottom: -2.5mm; border-bottom: 0.6mm solid #2255aa;"></div>',
-            $style['bottomBorderHtml'],
+            'padding-left: 5mm; padding-right: 3mm; padding-bottom: 2.5mm; border-bottom: 0.6mm solid #2255aa;',
+            $style['bottomBorderSpanCss'],
         );
     }
 
@@ -155,8 +157,8 @@ class TextElementStyleTest extends TestCase
             'bottomBorderWidth' => 0.0,
         ]);
 
-        $this->assertStringContainsString('bottom: -0mm;', $style['bottomBorderHtml']);
-        $this->assertStringContainsString('border-bottom: 0.1mm solid', $style['bottomBorderHtml']);
+        $this->assertStringContainsString('padding-bottom: 0mm;', $style['bottomBorderSpanCss']);
+        $this->assertStringContainsString('border-bottom: 0.1mm solid', $style['bottomBorderSpanCss']);
     }
 
     public function test_overflow_css_is_set_only_for_fixed_size_text_resize_mode(): void

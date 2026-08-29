@@ -16,7 +16,7 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
  */
 class TextElementStyle
 {
-    /** @return array{fontFamily: string, fontSizePt: float, fontWeight: int, fontStyle: string, color: string, textAlign: string, lineHeightPt: float, letterSpacing: float, decorationCss: string, shadowCss: string, overflowCss: string, contentPositionCss: string, baselineCorrectionPt: float, bottomBorderHtml: string} */
+    /** @return array{fontFamily: string, fontSizePt: float, fontWeight: int, fontStyle: string, color: string, textAlign: string, lineHeightPt: float, letterSpacing: float, decorationCss: string, shadowCss: string, overflowCss: string, contentPositionCss: string, baselineCorrectionPt: float, bottomBorderSpanCss: string} */
     public static function describe(DesignElement $element, string $colorFormat, string $unit, FontRegistrar $fonts): array
     {
         $fontFamily = $fonts->resolveFamily($element->property('fontFamily'));
@@ -94,7 +94,7 @@ class TextElementStyle
         $overflowCss = $element->property('textResizeMode') === 'fixedSize' ? 'overflow: hidden;' : '';
 
         $bottomBorderEnabled = (bool) $element->property('bottomBorderEnabled', false);
-        $bottomBorderHtml = '';
+        $bottomBorderSpanCss = '';
         if ($bottomBorderEnabled) {
             $bottomBorderGap = max(0, (float) $element->property('bottomBorderGap', 1.5));
             $bottomBorderWidth = max(0.1, (float) $element->property('bottomBorderWidth', 0.4));
@@ -103,20 +103,24 @@ class TextElementStyle
             $bottomBorderColor = ColorConverter::toCss(
                 $element->property('bottomBorderColor', $element->property('color')), $colorFormat, $color,
             );
-            // A sibling position:absolute box, not padding on the centered/
-            // shrink-to-fit text box itself: dompdf mis-centers a `display:
-            // table` box whose own `left: 50%; transform: translateX(-50%)`
-            // centering is combined with padding-left/padding-right on that
-            // same box - the padding gets counted in the shrink-to-fit width
-            // used to position it, but isn't painted as an inset, so the
-            // whole (correctly-sized) box lands off-center by roughly the
-            // padding. A position:absolute child with negative left/right
-            // offsets extends past its parent without contributing to the
-            // parent's own shrink-to-fit measurement at all, sidestepping
-            // the bug entirely (verified against real dompdf output, not
-            // just reasoned about).
-            $bottomBorderHtml = sprintf(
-                '<div style="position: absolute; left: -%s%s; right: -%s%s; bottom: -%s%s; border-bottom: %s%s solid %s;"></div>',
+            // padding-left/right/bottom + border-bottom on an inline <span>
+            // that wraps the text itself, not a separate sibling element
+            // inside `.text-content`: dompdf wraps any *other* child of a
+            // `display:table` box (`.text-content`, for the shrink-to-fit
+            // centering explained above) in its own anonymous table row
+            // regardless of that child's position:absolute status, which
+            // silently roughly doubles the table's rendered height and
+            // pushes a sibling underline far below the text (verified by
+            // rendering an isolated reproduction with a tinted background
+            // and measuring its real pixel height, not just reasoned
+            // about). Padding/border on an inline element that's already
+            // part of the table's own text content sidesteps that
+            // entirely, and - unlike padding on `.text-content` itself -
+            // doesn't feed into its shrink-to-fit *width* measurement
+            // either, so the horizontal-centering bug this class already
+            // works around doesn't reappear.
+            $bottomBorderSpanCss = sprintf(
+                'padding-left: %s%s; padding-right: %s%s; padding-bottom: %s%s; border-bottom: %s%s solid %s;',
                 $bottomBorderLeftPadding, $unit,
                 $bottomBorderRightPadding, $unit,
                 $bottomBorderGap, $unit,
@@ -139,7 +143,7 @@ class TextElementStyle
             'overflowCss' => $overflowCss,
             'contentPositionCss' => $contentPositionCss,
             'baselineCorrectionPt' => $baselineCorrectionPt,
-            'bottomBorderHtml' => $bottomBorderHtml,
+            'bottomBorderSpanCss' => $bottomBorderSpanCss,
         ];
     }
 }

@@ -86,6 +86,7 @@ class FontRegistrar
         // export accepts for any font it only has one weight for.
         $metrics->registerFont(['family' => 'Inter', 'weight' => 'normal', 'style' => 'normal'], $fallbackPath);
         $metrics->registerFont(['family' => 'Inter', 'weight' => 'bold', 'style' => 'normal'], $fallbackPath);
+        $this->cacheMetrics('Inter', $fallbackPath);
     }
 
     /** The family name to actually put in generated CSS - $requestedFamily verbatim if it's one we bundle, else the fallback. */
