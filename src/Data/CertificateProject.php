@@ -22,6 +22,7 @@ class CertificateProject
         public array $elements,
         public string $colorFormat = 'css-hex',
         public array $embeddedFonts = [],
+        public string $dateFormat = 'MMM d, yyyy',
     ) {}
 
     public static function fromArray(array $data): self
@@ -44,6 +45,9 @@ class CertificateProject
             // ColorConverter treats that as "still Flutter ARGB order".
             colorFormat: (string) ($data['color_format'] ?? 'argb'),
             embeddedFonts: self::embeddedFontsFromArray($data['embedded_fonts'] ?? []),
+            // Absent on files predating this field - matches Design
+            // Studio's own de-facto default before the picker existed.
+            dateFormat: (string) ($data['date_format'] ?? 'MMM d, yyyy'),
         );
 
         $project->elements = self::withMigratedBackground($project->elements, $data, $project->width, $project->height);
@@ -115,22 +119,6 @@ class CertificateProject
         ]);
 
         return [$backgroundElement, ...$elements];
-    }
-
-    /** Top-level elements only (no grouped children) - used to drive the main render loop, which handles a group's children itself. */
-    public function topLevelElements(): array
-    {
-        $childIds = [];
-        foreach ($this->elements as $element) {
-            foreach ($element->childrenIds ?? [] as $childId) {
-                $childIds[$childId] = true;
-            }
-        }
-
-        return array_values(array_filter(
-            $this->elements,
-            fn (DesignElement $e) => ! isset($childIds[$e->id]),
-        ));
     }
 
     public function children(DesignElement $group): array
@@ -272,6 +260,8 @@ class CertificateProject
                 'shapeType' => $element->property('shapeType', 'rectangle'),
             ],
             'qrcode' => [
+                'qrType' => $element->property('qrType', 'custom'),
+                'isAuthenticationLink' => $element->isQrAuthenticationLink(),
                 'dataPreview' => $this->shortPreview((string) $element->property('data', '')),
             ],
             'barcode' => [
@@ -356,5 +346,23 @@ class CertificateProject
         }
 
         return array_keys($names);
+    }
+
+    /**
+     * The element ID of this project's "Authentication link" QR code, if
+     * it has one (the Design Studio allows at most one per project). Null
+     * when the project has no such element. Use this to key the
+     * `$qrCodeOverrides` array passed to CertificateRenderer without the
+     * caller needing to already know the element's ID.
+     */
+    public function authenticationQrElementId(): ?string
+    {
+        foreach ($this->elements as $element) {
+            if ($element->isQrAuthenticationLink()) {
+                return $element->id;
+            }
+        }
+
+        return null;
     }
 }

@@ -80,6 +80,19 @@ class DesignElement
     }
 
     /**
+     * True for a QR code whose Design Studio "Content source" is set to
+     * "Authentication link" rather than "Custom value". The Studio always
+     * saves this element's `data` as an empty string - the real payload
+     * (e.g. a per-recipient verification URL) doesn't exist until issuance
+     * and must be supplied by the host application via `qrCodeOverrides`.
+     * The Studio enforces at most one such element per project.
+     */
+    public function isQrAuthenticationLink(): bool
+    {
+        return $this->type === 'qrcode' && $this->property('qrType', 'custom') === 'authentication';
+    }
+
+    /**
      * Content alignment saved by Certigniter's Content position control.
      *
      * Older projects do not contain this property. Keep their established

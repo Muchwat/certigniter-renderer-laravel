@@ -2,6 +2,7 @@
 
 namespace Certigniter\CertificateRenderer\Support;
 
+use Certigniter\CertificateRenderer\Data\CertificateProject;
 use Certigniter\CertificateRenderer\Data\DesignElement;
 
 /**
@@ -14,7 +15,10 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
  *    WHOLE-FIELD replacement (the element's own `text` is discarded
  *    entirely), matched against the recipient record case-insensitively
  *    and trimmed. An element with no `variableName` is static and passes
- *    its `text` through unchanged.
+ *    its `text` through unchanged. When $project is supplied and the
+ *    matched value parses as a date (see `DateFormatting::tryFormat`), it
+ *    is re-rendered using the element's own `dateFormat` property, or the
+ *    project's own `dateFormat` if the element didn't set one.
  *  - qrcode / barcode `data`: INLINE token substitution - every
  *    `{{ColumnName}}` and `<ColumnName>` occurrence in the string is
  *    replaced, for every column in the record, case-SENSITIVE and
@@ -24,10 +28,10 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
 class RecipientMerge
 {
     /** @param array<string, string> $record */
-    public static function apply(DesignElement $element, array $record): DesignElement
+    public static function apply(DesignElement $element, array $record, ?CertificateProject $project = null): DesignElement
     {
         if ($element->isTextLike()) {
-            return self::applyToText($element, $record);
+            return self::applyToText($element, $record, $project);
         }
 
         if (in_array($element->type, ['qrcode', 'barcode'], true)) {
@@ -37,7 +41,8 @@ class RecipientMerge
         return $element;
     }
 
-    private static function applyToText(DesignElement $element, array $record): DesignElement
+    /** @param array<string, string> $record */
+    private static function applyToText(DesignElement $element, array $record, ?CertificateProject $project): DesignElement
     {
         $variableName = $element->property('variableName');
 
@@ -46,9 +51,22 @@ class RecipientMerge
         }
 
         $clone = clone $element;
-        $clone->properties['text'] = self::recordValue($record, [$variableName]);
+        $rawValue = self::recordValue($record, [$variableName]);
+        $clone->properties['text'] = self::applyDateFormat($element, $rawValue, $project);
 
         return $clone;
+    }
+
+    private static function applyDateFormat(DesignElement $element, string $rawValue, ?CertificateProject $project): string
+    {
+        if ($project === null) {
+            return $rawValue;
+        }
+
+        $override = $element->property('dateFormat');
+        $icuPattern = (is_string($override) && $override !== '') ? $override : $project->dateFormat;
+
+        return DateFormatting::tryFormat($rawValue, $icuPattern) ?? $rawValue;
     }
 
     private static function applyToData(DesignElement $element, array $record): DesignElement
