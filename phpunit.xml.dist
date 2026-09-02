@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+>
+    <!--
+        This suite covers only the classes that work standalone, without a
+        booted Laravel application (no view()/config()/container calls) -
+        ColorConverter, RecipientMerge, Encryption, GroupComposer,
+        ShapeRenderer, CertificateProject, DesignElement, FontRegistrar,
+        BarcodeRenderer. It exists so `composer require` + `vendor/bin/phpunit`
+        verifies real behavior for anyone installing this package outside the
+        certigniter monorepo, where phpunit/phpunit was previously a declared
+        but unused dev dependency.
+
+        CertificateRenderer, CertificateRendererServiceProvider, and
+        QrCodeRenderer need a real Laravel container (view resolution, the
+        simple-qrcode facade binding) and are exercised instead by the
+        integration suite in the consuming Laravel app - see this package's
+        README "Testing" section.
+    -->
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+        <exclude>
+            <file>src/CertificateRenderer.php</file>
+            <file>src/CertificateRendererServiceProvider.php</file>
+            <file>src/Facades/Certigniter.php</file>
+            <file>src/Support/QrCodeRenderer.php</file>
+        </exclude>
+    </source>
+</phpunit>
