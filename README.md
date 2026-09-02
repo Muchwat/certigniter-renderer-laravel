@@ -40,6 +40,9 @@ The package can:
 - A writable system temporary directory for Dompdf's font cache
 - The PHP extensions required by Dompdf, Simple QR Code, and the selected
   image formats
+- A `gs` (Ghostscript) executable on `PATH` (e.g. `brew install ghostscript` /
+  `apt-get install ghostscript`), but only if you call `capture()` - no
+  PHP extension required, it's shelled out to directly
 
 ## Installation
 
@@ -225,6 +228,36 @@ both mechanisms in template order.
 When no recipient is supplied, variable text renders empty and QR/barcode
 tokens remain unresolved. That is normally suitable only for structural
 template previews.
+
+### Consistent date formatting
+
+`$recipient` values are substituted exactly as given - `'Issue Date' =>
+'2026-08-11'` and `'Issue Date' => 'Aug 11, 2026'` are both valid, and this
+package has no opinion on which. If your own values come from a real date
+(rather than an already-formatted string, e.g. from a CSV import or an
+HTML `<input type="date">`, which always yields ISO `yyyy-MM-dd`), format
+them with `$project->dateFormat` first so every certificate for a project
+shows dates the same way its designer chose in Design Studio's date-format
+picker, regardless of how each certificate was issued:
+
+```php
+use Certigniter\CertificateRenderer\Support\DateFormatting;
+
+$project = $renderer->parseIgniter($encrypted);
+
+$recipient = [
+    'Recipient Name' => 'Ada Lovelace',
+    'Issue Date' => DateFormatting::format($issuedAt, $project->dateFormat),
+];
+```
+
+`$project->dateFormat` is a Dart/ICU-style pattern (e.g. `'MMM d, yyyy'`) -
+the same syntax the picker itself uses - and defaults to `'MMM d, yyyy'`
+for any `.igniter` file saved before this field existed.
+`DateFormatting::toPhpFormat()` and `::format()` translate a small, fixed
+set of patterns (exactly the ones the picker offers) into PHP's `date()`
+syntax; an unrecognized pattern falls back to the default rather than
+guessing at a translation.
 
 ## Dynamic QR code values
 
@@ -421,6 +454,50 @@ renderProjectToPdf(
 ```
 
 Preferred rendering method after a project has already been inspected.
+
+### `capture()`
+
+```php
+capture(
+    string $encryptedIgniterContent,
+    ?array $recipient = null,
+    ?string $encryptionKey = null,
+    array $imageOverrides = [],
+    array $qrCodeOverrides = [],
+    ?string $outputPath = null,
+    int $resolution = 150,
+): string
+```
+
+Renders straight to a PNG preview and writes it to `$outputPath` (a temp file
+when omitted), returning the path written. This is the method a host app
+calls at the moment a user installs/imports an `.igniter` file, to get a
+thumbnail to display for it. Shells out to a `gs` (Ghostscript) binary
+directly - no `imagick` PHP extension involved - configurable via
+`certigniter.ghostscript_binary` / `CERTIGNITER_GHOSTSCRIPT_BINARY` (see
+[Requirements](#requirements)); throws a `RuntimeException` if the binary is
+missing or fails.
+
+Two things worth knowing before wiring this into an install/import flow:
+
+- **A missing Ghostscript binary shouldn't be fatal to your own install
+  step.** If you call `capture()` from a Composer script or similar
+  onboarding hook, catch the exception and treat it as non-fatal - Composer
+  aborts the entire `install`/`update` on any non-zero script exit, so a
+  teammate or CI runner without Ghostscript would otherwise be unable to
+  install your app at all. This package's own `certificate:snapshot`
+  Artisan command in the parent app does exactly that (warns, still exits
+  `0`).
+- **A real-world `.igniter` file with path-only images will produce an
+  incomplete thumbnail, not an error.** Per the `imageData`-vs-`path`
+  distinction described under [Replacing logos and
+  signatures](#replacing-logos-and-signatures), any image element that only
+  has a local `path` (common for files exported before a project embeds its
+  assets) is silently skipped - `capture()` still returns a PNG, it's just
+  missing that background/logo. Always check `warnings()` right after
+  calling `capture()` and surface it (e.g. "this certificate's preview may
+  be missing some images") rather than assuming a returned path means a
+  complete render.
 
 ### `warnings()`
 

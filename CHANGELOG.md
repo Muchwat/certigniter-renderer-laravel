@@ -2,7 +2,7 @@
 
 All notable changes to this package are documented here.
 
-## [Unreleased]
+## [2.0.0] - 2026-09-02
 
 ### Added
 
@@ -16,6 +16,24 @@ All notable changes to this package are documented here.
   `phpunit/phpunit` was previously a declared dev dependency with nothing to
   run. See the README's "Testing" section for what's covered here versus in
   the consuming Laravel app's integration suite.
+- `CertificateProject::$dateFormat`, parsed from a project's new
+  `date_format` key (a Dart/ICU-style pattern like `'MMM d, yyyy'`, the
+  same syntax Design Studio's new date-format picker uses) - defaults to
+  `'MMM d, yyyy'` for every existing `.igniter` file, which lacks the key
+  entirely. This package doesn't format any recipient value itself
+  (`RecipientMerge` stays a pure pass-through of whatever string a caller
+  supplies), so pair it with the new `Support\DateFormatting` helper below
+  when building a recipient map from a real date rather than an
+  already-formatted string.
+- `Support\DateFormatting`, an opt-in helper translating a project's
+  `dateFormat` into PHP's `date()` syntax
+  (`DateFormatting::format($issuedAt, $project->dateFormat)`), so a host
+  application's own date values can stay visually consistent with
+  whatever format the certificate's designer picked, instead of each
+  caller defaulting to its own format (an HTML `<input type="date">`
+  always produces ISO `yyyy-MM-dd`, for instance) and producing a
+  certificate where the same field looks different depending on how it
+  was issued.
 
 ### Changed
 

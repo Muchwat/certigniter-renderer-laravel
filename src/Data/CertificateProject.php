@@ -22,6 +22,7 @@ class CertificateProject
         public array $elements,
         public string $colorFormat = 'css-hex',
         public array $embeddedFonts = [],
+        public string $dateFormat = 'MMM d, yyyy',
     ) {}
 
     public static function fromArray(array $data): self
@@ -44,6 +45,9 @@ class CertificateProject
             // ColorConverter treats that as "still Flutter ARGB order".
             colorFormat: (string) ($data['color_format'] ?? 'argb'),
             embeddedFonts: self::embeddedFontsFromArray($data['embedded_fonts'] ?? []),
+            // Absent on files predating this field - matches Design
+            // Studio's own de-facto default before the picker existed.
+            dateFormat: (string) ($data['date_format'] ?? 'MMM d, yyyy'),
         );
 
         $project->elements = self::withMigratedBackground($project->elements, $data, $project->width, $project->height);

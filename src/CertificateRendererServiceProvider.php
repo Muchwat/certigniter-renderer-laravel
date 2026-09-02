@@ -19,6 +19,7 @@ class CertificateRendererServiceProvider extends ServiceProvider
                 fallbackFontRelativePath: (string) $config['fallback_font'],
                 fontsBasePath: __DIR__.'/../resources/fonts',
                 composeGroupTransforms: (bool) ($config['compose_group_transforms'] ?? true),
+                ghostscriptBinary: (string) ($config['ghostscript_binary'] ?? 'gs'),
             );
         });
 

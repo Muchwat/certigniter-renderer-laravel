@@ -26,13 +26,18 @@ class CertificateRenderer
     /** @var string[] non-fatal issues from the most recent render (e.g. an image that couldn't be resolved server-side) */
     private array $warnings = [];
 
-    /** @param array<string, array{normal: string, bold: string}> $fonts */
+    /**
+     * @param  array<string, array{normal: string, bold: string}>  $fonts
+     * @param  string  $ghostscriptBinary  executable used by capture() to rasterize a PDF to PNG -
+     *                                     shelled out to directly (no `imagick` extension involved)
+     */
     public function __construct(
         private readonly string $encryptionKey,
         private readonly array $fonts,
         private readonly string $fallbackFontRelativePath,
         private readonly string $fontsBasePath,
         private readonly bool $composeGroupTransforms,
+        private readonly string $ghostscriptBinary = 'gs',
     ) {}
 
     /**
@@ -58,6 +63,119 @@ class CertificateRenderer
         $project = $this->parseIgniter($encryptedIgniterContent, $encryptionKey);
 
         return $this->renderProjectToPdf($project, $recipient, $imageOverrides, $qrCodeOverrides);
+    }
+
+    /**
+     * Render an .igniter file straight to a PNG preview image and save it
+     * to disk - useful for a quick visual snapshot (e.g. a sample
+     * certificate for a demo or landing page). Shells out to a Ghostscript
+     * binary directly (see the `certigniter.ghostscript_binary` config
+     * value) rather than going through the `imagick` PHP extension, so the
+     * only new system requirement is the `gs` executable itself.
+     *
+     * @param  array<string, string>|null  $recipient  see renderIgniterToPdf()
+     * @param  array<string, string>  $imageOverrides  see renderIgniterToPdf()
+     * @param  array<string, string>  $qrCodeOverrides  see renderIgniterToPdf()
+     * @param  ?string  $outputPath  where to write the PNG; a temp file is created when omitted
+     * @param  int  $resolution  rasterization density in DPI - higher looks sharper but is slower/larger
+     * @return string the path the PNG was written to (== $outputPath when given)
+     */
+    public function capture(
+        string $encryptedIgniterContent,
+        ?array $recipient = null,
+        ?string $encryptionKey = null,
+        array $imageOverrides = [],
+        array $qrCodeOverrides = [],
+        ?string $outputPath = null,
+        int $resolution = 150,
+    ): string {
+        $pdf = $this->renderIgniterToPdf($encryptedIgniterContent, $recipient, $encryptionKey, $imageOverrides, $qrCodeOverrides);
+
+        return $this->pdfToPngThumbnail($pdf, $outputPath ?? tempnam(sys_get_temp_dir(), 'certigniter-thumb-').'.png', $resolution);
+    }
+
+    private function pdfToPngThumbnail(string $pdfBytes, string $outputPath, int $resolution): string
+    {
+        if (! function_exists('proc_open')) {
+            throw new RuntimeException('The PHP proc_open() function is disabled - required to shell out to Ghostscript for certificate thumbnails.');
+        }
+
+        $directory = dirname($outputPath);
+        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
+            throw new RuntimeException("Unable to create the thumbnail directory: {$directory}");
+        }
+
+        $tempPdfPath = tempnam(sys_get_temp_dir(), 'certigniter-thumb-src-').'.pdf';
+        file_put_contents($tempPdfPath, $pdfBytes);
+
+        try {
+            $this->runGhostscript($tempPdfPath, $outputPath, $resolution);
+        } finally {
+            @unlink($tempPdfPath);
+        }
+
+        return $outputPath;
+    }
+
+    /**
+     * Shells out to Ghostscript directly (an array command, so no shell
+     * interpolation/escaping is involved) rather than going through the
+     * `imagick` extension, since a bare `gs` binary is a lighter system
+     * requirement than compiling/enabling a PHP extension.
+     */
+    private function runGhostscript(string $pdfPath, string $outputPath, int $resolution): void
+    {
+        // Suppressed deliberately: a missing binary makes proc_open() raise
+        // an E_WARNING ("posix_spawn() failed: No such file or directory")
+        // that a booted Laravel app's error handler promotes to an
+        // ErrorException before the $process === false check below ever
+        // runs, leaking that raw OS-level message instead of the clear one
+        // below. The `@` keeps behavior identical whether or not a Laravel
+        // error handler is installed (this package also runs standalone).
+        $process = @proc_open(
+            [
+                $this->ghostscriptBinary,
+                '-q',
+                '-dSAFER',
+                '-dBATCH',
+                '-dNOPAUSE',
+                // Only the first page is rasterized, so a multi-page PDF
+                // isn't fully rendered just to preview it.
+                '-dFirstPage=1',
+                '-dLastPage=1',
+                '-dTextAlphaBits=4',
+                '-dGraphicsAlphaBits=4',
+                '-sDEVICE=pngalpha',
+                "-r{$resolution}",
+                "-sOutputFile={$outputPath}",
+                $pdfPath,
+            ],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+
+        if ($process === false) {
+            throw new RuntimeException(
+                "Unable to start the Ghostscript process ('{$this->ghostscriptBinary}') - is Ghostscript "
+                .'installed and on PATH? (e.g. `brew install ghostscript` / `apt-get install ghostscript`). '
+                .'Set certigniter.ghostscript_binary / CERTIGNITER_GHOSTSCRIPT_BINARY if it uses a different name or path.'
+            );
+        }
+
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exitCode = proc_close($process);
+
+        if ($exitCode !== 0 || ! is_file($outputPath)) {
+            throw new RuntimeException(sprintf(
+                "Ghostscript ('%s') failed to rasterize the certificate to PNG (exit %d): %s",
+                $this->ghostscriptBinary,
+                $exitCode,
+                trim($stderr."\n".$stdout) ?: 'no output',
+            ));
+        }
     }
 
     /**
@@ -96,7 +214,7 @@ class CertificateRenderer
         $elements = $this->applyImageOverrides($elements, $imageOverrides);
 
         if ($recipient !== null) {
-            $elements = array_map(fn (DesignElement $e) => RecipientMerge::apply($e, $recipient), $elements);
+            $elements = array_map(fn (DesignElement $e) => RecipientMerge::apply($e, $recipient, $project), $elements);
         }
 
         $elements = $this->applyQrCodeOverrides($elements, $qrCodeOverrides);

@@ -46,6 +46,22 @@ class CertificateProjectTest extends TestCase
         $this->assertSame('argb', $project->colorFormat);
     }
 
+    public function test_date_format_is_parsed_from_the_project(): void
+    {
+        $project = CertificateProject::fromArray($this->rawProject(['date_format' => 'yyyy-MM-dd']));
+
+        $this->assertSame('yyyy-MM-dd', $project->dateFormat);
+    }
+
+    public function test_date_format_defaults_when_absent(): void
+    {
+        // Every .igniter file saved before this field existed lacks the
+        // key entirely - matches Design Studio's own de-facto default.
+        $project = CertificateProject::fromArray($this->rawProject());
+
+        $this->assertSame('MMM d, yyyy', $project->dateFormat);
+    }
+
     public function test_a_legacy_top_level_background_becomes_a_synthetic_full_bleed_image_element(): void
     {
         $raw = $this->rawProject([

@@ -2,13 +2,14 @@
 
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
+use Certigniter\CertificateRenderer\Data\CertificateProject;
 use Certigniter\CertificateRenderer\Data\DesignElement;
 use Certigniter\CertificateRenderer\Support\RecipientMerge;
 use PHPUnit\Framework\TestCase;
 
 class RecipientMergeTest extends TestCase
 {
-    private function textElement(?string $variableName, string $text = 'unused'): DesignElement
+    private function textElement(?string $variableName, string $text = 'unused', ?string $dateFormat = null): DesignElement
     {
         return new DesignElement(
             id: 'e1',
@@ -20,7 +21,16 @@ class RecipientMergeTest extends TestCase
             properties: array_filter([
                 'text' => $text,
                 'variableName' => $variableName,
+                'dateFormat' => $dateFormat,
             ], fn ($v) => $v !== null),
+        );
+    }
+
+    private function project(string $dateFormat = 'MMM d, yyyy'): CertificateProject
+    {
+        return new CertificateProject(
+            id: 'p1', title: 'Test', width: 100, height: 100, unit: 'mm',
+            elements: [], dateFormat: $dateFormat,
         );
     }
 
@@ -106,5 +116,67 @@ class RecipientMergeTest extends TestCase
 
         $this->assertSame('CERT-1', RecipientMerge::recordValue($record, ['Missing', 'Certificate ID']));
         $this->assertSame('', RecipientMerge::recordValue($record, ['Nope']));
+    }
+
+    public function test_without_a_project_a_date_value_passes_through_unformatted(): void
+    {
+        $merged = RecipientMerge::apply(
+            $this->textElement('Issue Date'),
+            ['Issue Date' => '2026-01-05'],
+        );
+
+        $this->assertSame('2026-01-05', $merged->property('text'));
+    }
+
+    public function test_a_date_element_without_its_own_format_inherits_the_project_default(): void
+    {
+        $merged = RecipientMerge::apply(
+            $this->textElement('Issue Date'),
+            ['Issue Date' => '2026-01-05'],
+            $this->project(dateFormat: 'yyyy-MM-dd'),
+        );
+
+        $this->assertSame('2026-01-05', $merged->property('text'));
+    }
+
+    public function test_a_date_element_with_its_own_format_overrides_the_project_default(): void
+    {
+        $merged = RecipientMerge::apply(
+            $this->textElement('Issue Date', dateFormat: 'MMM d, yyyy'),
+            ['Issue Date' => '2026-01-05'],
+            $this->project(dateFormat: 'yyyy-MM-dd'),
+        );
+
+        $this->assertSame('Jan 5, 2026', $merged->property('text'));
+    }
+
+    public function test_two_date_elements_on_the_same_certificate_can_use_different_formats(): void
+    {
+        $project = $this->project(dateFormat: 'yyyy-MM-dd');
+
+        $issueDate = RecipientMerge::apply(
+            $this->textElement('Issue Date', dateFormat: 'MMM d, yyyy'),
+            ['Issue Date' => '2026-01-05', 'Expiry Date' => '2027-01-05'],
+            $project,
+        );
+        $expiryDate = RecipientMerge::apply(
+            $this->textElement('Expiry Date', dateFormat: 'dd/MM/yyyy'),
+            ['Issue Date' => '2026-01-05', 'Expiry Date' => '2027-01-05'],
+            $project,
+        );
+
+        $this->assertSame('Jan 5, 2026', $issueDate->property('text'));
+        $this->assertSame('05/01/2027', $expiryDate->property('text'));
+    }
+
+    public function test_a_non_date_value_passes_through_unchanged_even_with_a_project(): void
+    {
+        $merged = RecipientMerge::apply(
+            $this->textElement('Recipient Name'),
+            ['Recipient Name' => 'John Doe'],
+            $this->project(),
+        );
+
+        $this->assertSame('John Doe', $merged->property('text'));
     }
 }

@@ -91,4 +91,17 @@ return [
     |
     */
     'compose_group_transforms' => true,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Ghostscript binary
+    |--------------------------------------------------------------------------
+    |
+    | CertificateRenderer::capture() shells out to Ghostscript directly
+    | to rasterize a rendered PDF to PNG (no `imagick` PHP extension
+    | involved). Set CERTIGNITER_GHOSTSCRIPT_BINARY if `gs` isn't on PATH
+    | or you need a specific install (e.g. an absolute path).
+    |
+    */
+    'ghostscript_binary' => env('CERTIGNITER_GHOSTSCRIPT_BINARY', 'gs'),
 ];
