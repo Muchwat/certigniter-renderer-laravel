@@ -2,6 +2,32 @@
 
 All notable changes to this package are documented here.
 
+## [2.1.0] - 2026-09-02
+
+### Changed
+
+- `elementCatalog()`/`getElementIds()`'s default label for an element with
+  no custom `properties['name']` is now role/type-aware and consistently
+  numbered, matching Design Studio's own element-naming logic
+  (`ElementLabelUtil`): a signature image now reads `"Signature 1"`,
+  `"Signature 2"`, ... instead of `"Image 1"`, `"Image 2"`, ... - the
+  numbering is now per resolved name, not per raw element type, so a
+  signature image no longer shares its counter with an unrelated plain
+  image; an unrecognized element type reads `"Element 1"`, `"Element 2"`,
+  ... A text element still previews its own content (now also
+  `"[Empty Text]"` for an empty one, rather than falling through to a
+  number), and a dynamic-text placeholder still previews its variable name.
+  **Named elements are unaffected** - `properties['name']` still wins over
+  every default, so this only changes the computed label for elements a
+  designer never named. If your integration parses or displays default
+  labels for unnamed elements (rather than only showing/relying on names
+  you or the designer set), expect their exact text to change; the field's
+  shape (`array{id, type, label, ...}`) and every other key are unchanged.
+  Elements with an image path but no name previously showed the image's
+  filename (e.g. `"my-logo-2023"`) as their label - this is superseded by
+  the role/type-based name for consistency with Design Studio, which never
+  shows filenames on canvas.
+
 ## [2.0.1] - 2026-09-02
 
 No functional changes - re-tagged to mark the current `main` HEAD (an

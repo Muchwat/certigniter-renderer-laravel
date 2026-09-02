@@ -166,4 +166,81 @@ class CertificateProjectTest extends TestCase
         $this->assertSame($project->elementCatalog(), $project->getElementIds());
         $this->assertSame($project->elementCatalog('text'), $project->getElementIds('text'));
     }
+
+    public function test_unnamed_elements_with_a_known_role_get_a_smart_default_label(): void
+    {
+        $raw = $this->rawProject([
+            'elements' => [
+                ['id' => 'sig1', 'type' => 'image', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['placeholderRole' => 'signature_image']],
+                ['id' => 'sig2', 'type' => 'image', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['placeholderRole' => 'signature_image']],
+                ['id' => 'bar1', 'type' => 'barcode', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1],
+            ],
+        ]);
+        $project = CertificateProject::fromArray($raw);
+
+        $labels = array_column($project->elementCatalog(), 'label', 'id');
+
+        $this->assertSame('Signature 1', $labels['sig1']);
+        $this->assertSame('Signature 2', $labels['sig2']);
+        $this->assertSame('Barcode 1', $labels['bar1']);
+    }
+
+    public function test_unrecognized_elements_fall_back_to_a_numbered_generic_label(): void
+    {
+        $raw = $this->rawProject([
+            'elements' => [
+                ['id' => 'x1', 'type' => 'widget', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1],
+                ['id' => 'x2', 'type' => 'widget', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1],
+            ],
+        ]);
+        $project = CertificateProject::fromArray($raw);
+
+        $labels = array_column($project->elementCatalog(), 'label', 'id');
+
+        $this->assertSame('Widget 1', $labels['x1']);
+        $this->assertSame('Widget 2', $labels['x2']);
+    }
+
+    public function test_a_named_element_keeps_its_custom_name_over_any_default(): void
+    {
+        $raw = $this->rawProject([
+            'elements' => [
+                ['id' => 'sig', 'type' => 'image', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['placeholderRole' => 'signature_image', 'name' => 'CEO Signature']],
+            ],
+        ]);
+        $project = CertificateProject::fromArray($raw);
+
+        $this->assertSame('CEO Signature', $project->elementCatalog()[0]['label']);
+    }
+
+    public function test_a_text_element_with_no_custom_name_previews_its_own_content(): void
+    {
+        $project = CertificateProject::fromArray($this->rawProject());
+
+        $this->assertSame('Hello', $project->elementCatalog()[0]['label']);
+    }
+
+    public function test_an_empty_text_element_labels_itself_rather_than_falling_back_to_a_number(): void
+    {
+        $raw = $this->rawProject([
+            'elements' => [
+                ['id' => 't', 'type' => 'text', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['text' => '']],
+            ],
+        ]);
+        $project = CertificateProject::fromArray($raw);
+
+        $this->assertSame('[Empty Text]', $project->elementCatalog()[0]['label']);
+    }
+
+    public function test_a_dynamic_text_placeholder_with_no_custom_name_previews_its_humanized_variable_name(): void
+    {
+        $raw = $this->rawProject([
+            'elements' => [
+                ['id' => 't', 'type' => 'placeholder_text', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['placeholderRole' => 'dynamic_text', 'variableName' => 'company_name']],
+            ],
+        ]);
+        $project = CertificateProject::fromArray($raw);
+
+        $this->assertSame('Company Name', $project->elementCatalog()[0]['label']);
+    }
 }

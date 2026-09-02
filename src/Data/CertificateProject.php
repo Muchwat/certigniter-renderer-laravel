@@ -162,18 +162,18 @@ class CertificateProject
             }
         }
 
+        $labels = $this->elementLabels();
+
         $catalog = [];
-        $typeCounts = [];
         foreach ($this->elements as $element) {
             if ($type !== null && $element->type !== $type) {
                 continue;
             }
-            $typeCounts[$element->type] = ($typeCounts[$element->type] ?? 0) + 1;
 
             $catalog[] = [
                 'id' => $element->id,
                 'type' => $element->type,
-                'label' => $this->elementLabel($element, $typeCounts[$element->type]),
+                'label' => $labels[$element->id] ?? $element->type,
                 'visible' => $element->isVisible(),
                 'replaceable' => $element->type === 'image',
                 'parentGroupId' => $parentGroups[$element->id] ?? null,
@@ -203,35 +203,128 @@ class CertificateProject
         return $this->elementCatalog($type);
     }
 
-    private function elementLabel(DesignElement $element, int $number): string
+    /**
+     * Known `placeholderRole` values (see Design Studio's ElementIconUtil,
+     * the other place this same set is enumerated) mapped to a human name.
+     * Checked before the plain type-based fallback below, so e.g. a
+     * signature image (type `image`, role `signature_image`) reads as
+     * "Signature", not "Image".
+     */
+    private const ROLE_BASE_NAMES = [
+        'static_text' => 'Text',
+        'recipient_name' => 'Recipient Name',
+        'description' => 'Description',
+        'issuer' => 'Issuer',
+        'image' => 'Image',
+        'logo' => 'Logo', // Legacy role - see ElementIconUtil's comment.
+        'qrcode' => 'QR Code',
+        'barcode' => 'Barcode',
+        'dynamic_text' => 'Variable Text',
+        'issue_date' => 'Issue Date',
+        'expiry_date' => 'Expiry Date',
+        'signatory_name' => 'Signatory Name',
+        'signature_image' => 'Signature',
+        'signatory_title' => 'Signatory Title',
+        'serial_number' => 'Serial Number',
+    ];
+
+    private const TYPE_BASE_NAMES = [
+        'text' => 'Text',
+        'placeholder_text' => 'Variable Text',
+        'image' => 'Image',
+        'qrcode' => 'QR Code',
+        'barcode' => 'Barcode',
+        'group' => 'Group',
+        'shape' => 'Shape',
+    ];
+
+    /**
+     * Every element's display label, keyed by id, computed in one pass over
+     * the whole project - mirrors Design Studio's own ElementLabelUtil
+     * (lib/utils/designer/element_label_util.dart) so a catalog built here
+     * reads the same as what the designer saw while building the template:
+     * a custom `properties['name']` wins; otherwise a known role/type gets
+     * a name that means something ("Signature", "Barcode", ...) instead of
+     * a raw type string, numbered from the first occurrence ("Signature
+     * 1", "Signature 2", ...) so repeats stay distinguishable. Anything
+     * unrecognized falls back to "Element 1", "Element 2", ...
+     *
+     * @return array<string, string>
+     */
+    private function elementLabels(): array
     {
-        $name = trim((string) $element->property('name', ''));
-        if ($name !== '') {
-            return $name;
+        $baseNameCounts = [];
+        $labels = [];
+
+        foreach ($this->elements as $element) {
+            $name = trim((string) $element->property('name', ''));
+            if ($name !== '') {
+                $labels[$element->id] = $name;
+
+                continue;
+            }
+
+            $preview = $this->elementContentPreview($element);
+            if ($preview !== null) {
+                $labels[$element->id] = $preview;
+
+                continue;
+            }
+
+            $baseName = $this->elementBaseName($element);
+            $occurrence = ($baseNameCounts[$baseName] ?? 0) + 1;
+            $baseNameCounts[$baseName] = $occurrence;
+            $labels[$element->id] = "{$baseName} {$occurrence}";
         }
 
+        return $labels;
+    }
+
+    /**
+     * The element's base name before any disambiguating number - a known
+     * role or type maps to a human name; anything unrecognized falls back
+     * to "Element".
+     */
+    private function elementBaseName(DesignElement $element): string
+    {
+        $role = trim((string) $element->property('placeholderRole', ''));
+        if ($role !== '' && isset(self::ROLE_BASE_NAMES[$role])) {
+            return self::ROLE_BASE_NAMES[$role];
+        }
+
+        if (isset(self::TYPE_BASE_NAMES[$element->type])) {
+            return self::TYPE_BASE_NAMES[$element->type];
+        }
+
+        return $element->type === '' ? 'Element' : ucfirst(str_replace('_', ' ', $element->type));
+    }
+
+    /**
+     * Content-based label for a text-ish element with no custom name: a
+     * preview of what it actually contains, so an unlabeled title reads as
+     * its own words rather than a generic "Text 1". Returns null when
+     * there's no usable content to preview, so the caller falls through to
+     * the role/type-based base name instead.
+     */
+    private function elementContentPreview(DesignElement $element): ?string
+    {
         if ($element->type === 'text') {
             $text = trim((string) $element->property('text', ''));
-            if ($text !== '') {
-                return $this->shortPreview($text);
-            }
+
+            return $text === '' ? '[Empty Text]' : $this->shortPreview($text);
         }
 
-        if ($element->isTextLike()) {
+        if ($element->property('placeholderRole') === 'dynamic_text') {
             $variable = trim((string) $element->property('variableName', ''));
             if ($variable !== '') {
-                return "Variable: {$variable}";
+                return implode(' ', array_map(
+                    fn (string $word) => $word === '' ? '' : ucfirst($word),
+                    explode(' ', str_replace('_', ' ', $variable)),
+                ));
             }
         }
 
-        if ($element->type === 'image') {
-            $path = trim((string) $element->property('path', ''));
-            if ($path !== '') {
-                return pathinfo($path, PATHINFO_FILENAME) ?: "Image {$number}";
-            }
-        }
-
-        return ucfirst(str_replace('_', ' ', $element->type))." {$number}";
+        return null;
     }
 
     /** @return array<string, mixed> */
