@@ -2,6 +2,12 @@
 
 All notable changes to this package are documented here.
 
+## [2.0.1] - 2026-09-02
+
+No functional changes - re-tagged to mark the current `main` HEAD (an
+already-merged, content-identical commit on top of v2.0.0) as a release
+point.
+
 ## [2.0.0] - 2026-09-02
 
 ### Added
