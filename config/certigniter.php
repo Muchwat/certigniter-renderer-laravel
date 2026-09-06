@@ -26,12 +26,19 @@ return [
     | Bundled fonts
     |--------------------------------------------------------------------------
     |
-    | These are the only font families Certigniter itself guarantees look
-    | identical wherever a certificate is exported, because it bundles their
-    | actual .ttf files rather than relying on whatever's installed on the
-    | machine doing the rendering (see Certigniter's
-    | lib/services/batch_pdf_generator.dart). Any other fontFamily value
-    | found in a project falls back to 'fallback' below.
+    | The font families Certigniter bundles as real .ttf files rather than
+    | relying on whatever is installed on the machine doing the rendering.
+    | Because both sides ship them, a project does not need to carry their
+    | bytes, so Certigniter leaves them out of the file by default.
+    |
+    | Keeping this list in step with Certigniter's own bundled families
+    | matters: the moment Certigniter adds one and stops embedding it, a
+    | server without the same .ttf here renders it in 'fallback_font'
+    | instead - silently, since the file is otherwise perfectly valid.
+    |
+    | Any other fontFamily falls back to 'fallback_font' below, unless the
+    | project carries that family's bytes in its own `embedded_fonts` (see
+    | FontRegistrar).
     |
     | Keys are the exact `fontFamily` strings Certigniter stores in a
     | project's JSON. Paths are relative to this package's resources/fonts
@@ -66,11 +73,12 @@ return [
     | Fallback font
     |--------------------------------------------------------------------------
     |
-    | Used for any fontFamily not listed above (e.g. a system font the
-    | Certigniter desktop app picked up locally, which this server has no
-    | way to reproduce faithfully - the .igniter file only ever stores the
-    | family *name*, never the font bytes). Matches Certigniter's own
-    | fallback (assets/fonts/Inter/Inter-VariableFont.ttf).
+    | Used for any fontFamily that is neither listed above nor carried as
+    | font bytes inside the .igniter file itself. In practice that means a
+    | system font from a project saved before Certigniter embedded those -
+    | the file stores only the family *name*, which a server has no way to
+    | resolve. Matches Certigniter's own fallback
+    | (assets/fonts/Inter/Inter-VariableFont.ttf).
     |
     */
     'fallback_font' => 'Inter/Inter-VariableFont.ttf',

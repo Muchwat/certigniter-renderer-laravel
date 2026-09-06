@@ -6,13 +6,28 @@ use Dompdf\Dompdf;
 use FontLib\Font;
 
 /**
- * Certigniter itself only guarantees pixel-identical output for the 5 font
- * families it bundles actual .ttf files for (batch_pdf_generator.dart) -
- * any other fontFamily in a project is whatever's installed on the machine
- * that happened to render it, which a server has no way to reproduce (the
- * .igniter file only ever stores a family *name*, never font bytes). This
- * class registers our copy of those same 5 families with dompdf, and maps
- * everything else to the same Inter fallback Certigniter itself uses.
+ * Resolves a project's fonts against the three places its bytes can come
+ * from, in the order this class registers them:
+ *
+ *  1. `$fonts` - our own copy of the families Certigniter bundles, from
+ *     this package's resources/fonts. Always available, never depends on
+ *     what the designer's machine had installed.
+ *  2. `$embeddedFonts` - the font bytes carried inside the .igniter file
+ *     itself, decoded and written to `$fontCachePath`. Certigniter always
+ *     embeds a *system* font this way, because a family name alone cannot
+ *     be reproduced on another machine; it embeds a bundled family too when
+ *     the designer exports a self-contained file. Registered second, so an
+ *     embedded copy of a family we also bundle wins - harmless, since both
+ *     sides ship byte-identical files.
+ *  3. Inter, the fallback, for a family that is in neither - a system font
+ *     from a project saved before embedding, which a server genuinely has
+ *     no way to reproduce.
+ *
+ * A variant map may legitimately carry only `normal`: Certigniter drops a
+ * `bold` that is byte-identical to it (a system font is located as a single
+ * file, and Inter's two cuts are the same variable font). Both weights are
+ * still registered, from the one payload, so dompdf emboldens synthetically
+ * rather than falling through to Inter.
  */
 class FontRegistrar
 {
