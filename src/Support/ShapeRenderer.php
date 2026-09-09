@@ -152,35 +152,26 @@ class ShapeRenderer
     }
 
     /**
-     * (topLeft, topRight, bottomRight, bottomLeft), proportionally scaled
-     * when adjacent radii do not fit. Flutter's RRect uses the same global
-     * scale, preserving asymmetric corner proportions.
+     * (topLeft, topRight, bottomRight, bottomLeft), each clamped
+     * independently to half the shorter side - not scaled down together
+     * when adjacent radii don't fit. Mirrors the Studio editor's own
+     * per-corner clamp (design_element.dart's `_ShapePainter._cornerRadius`
+     * / the web Studio's `normalizedCornerRadii`), so what the designer
+     * sees while editing matches what gets rendered here: a proportional
+     * "shrink everything together" scale (the CSS border-radius rule this
+     * used to follow) made one corner's radius visibly affect the others.
      */
     private static function cornerRadii(DesignElement $element, float $width, float $height): array
     {
         $legacy = max(0.0, (float) $element->property('cornerRadius', 0.0));
-        $corner = fn (string $key) => max(0.0, (float) $element->property($key, $legacy));
-        $tl = $corner('cornerRadiusTopLeft');
-        $tr = $corner('cornerRadiusTopRight');
-        $br = $corner('cornerRadiusBottomRight');
-        $bl = $corner('cornerRadiusBottomLeft');
-        $scale = 1.0;
-        $constrain = static function (float $available, float $requested) use (&$scale): void {
-            if ($requested > 0) {
-                $scale = min($scale, max(0.0, $available) / $requested);
-            }
-        };
-
-        $constrain($width, $tl + $tr);
-        $constrain($width, $bl + $br);
-        $constrain($height, $tl + $bl);
-        $constrain($height, $tr + $br);
+        $maximum = max(0.0, min($width, $height) / 2);
+        $corner = fn (string $key) => min($maximum, max(0.0, (float) $element->property($key, $legacy)));
 
         return [
-            $tl * $scale,
-            $tr * $scale,
-            $br * $scale,
-            $bl * $scale,
+            $corner('cornerRadiusTopLeft'),
+            $corner('cornerRadiusTopRight'),
+            $corner('cornerRadiusBottomRight'),
+            $corner('cornerRadiusBottomLeft'),
         ];
     }
 

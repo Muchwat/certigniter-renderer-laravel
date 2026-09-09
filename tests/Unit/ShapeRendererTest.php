@@ -85,10 +85,12 @@ class ShapeRendererTest extends TestCase
         $this->assertMatchesRegularExpression('/rx="4"/', $svg);
     }
 
-    public function test_oversized_asymmetric_corners_normalize_proportionally_like_flutter_rrect(): void
+    public function test_oversized_corners_clamp_independently_without_affecting_the_others(): void
     {
-        // Matches the proportional-scale expectation already verified against
-        // Flutter's RRect on the Dart side (batch_pdf_generator_test.dart).
+        // Matches the Studio editor's own per-corner clamp (the web Studio's
+        // normalizedCornerRadii and Flutter's _ShapePainter._cornerRadius):
+        // each corner is capped at half the shorter side on its own, rather
+        // than scaling all four down together when one doesn't fit.
         $element = new DesignElement(
             id: 's', type: 'shape', x: 0, y: 0, width: 36.5, height: 36.5,
             properties: [
@@ -102,7 +104,7 @@ class ShapeRendererTest extends TestCase
         $method = new \ReflectionMethod(ShapeRenderer::class, 'cornerRadii');
         [$tl, $tr, $br, $bl] = $method->invoke(null, $element, 36.5, 36.5);
 
-        $this->assertEqualsWithDelta(4.5016666667, $tl, 1e-6);
+        $this->assertEqualsWithDelta(7.4, $tl, 1e-6);
         $this->assertEqualsWithDelta(18.25, $tr, 1e-6);
         $this->assertEqualsWithDelta(18.25, $br, 1e-6);
         $this->assertEqualsWithDelta(18.25, $bl, 1e-6);
