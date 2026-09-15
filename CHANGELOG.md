@@ -2,6 +2,78 @@
 
 All notable changes to this package are documented here.
 
+## [3.0.0] - 2026-09-15
+
+### Added
+
+- `DesignElement::isDynamicQr()`, mirroring `isQrAuthenticationLink()`, for a
+  QR element whose Design Studio "Content source" is "Dynamic value" - bound
+  to one recipient/CSV column via `properties.variableName`. It renders
+  through the existing `{{token}}`/`<token>` substitution on `data` (which
+  both Design Studio editors mirror from `variableName` on every edit), so
+  no change was needed to `RecipientMerge` or `CertificateProject::variableNames()`.
+  `CertificateRenderer` now also skips a dynamic QR with no column ever set,
+  with a warning, the same way it already did for an unconfigured
+  verification link.
+
+- `Support\IgniterPackage`, which reads the `.igniter` format: a ZIP container
+  holding an AES-encrypted `manifest.json` plus a raw `assets/` tree of the
+  images and fonts it references. It resolves each `{"asset_path": ...}`
+  reference in the manifest back to the base64 the rest of the package
+  expects, and rejects anything outside the documented layout - unknown or
+  duplicate member paths, symlinks, ZIP-level encryption, unsupported
+  compression, CRC mismatches, and per-file/total size limits. It never
+  extracts to disk, so Zip Slip does not apply. Requires `ext-zip`, now
+  declared in `composer.json`.
+
+### Changed
+
+- The QR "Content source" wire value `qrType: 'authentication'` is renamed
+  to `'verification'` (matching the Design Studio's "Verification link"
+  label). `'authentication'` is still accepted everywhere as a legacy,
+  fully-equivalent alias - `isQrAuthenticationLink()`'s name and behavior
+  are unchanged, older `.igniter` files/projects keep rendering identically.
+
+- **A `.igniter` file is a ZIP package, and it is self-contained.**
+  `parseIgniter()` reads that and only that; the earlier form - a single
+  encrypted JSON blob with every binary inline as base64 - is gone, along
+  with the code that read it. Every font and image a certificate uses now
+  travels as a compressed member of the archive's `assets/` tree.
+
+- **This package ships no fonts.** `resources/fonts` is deleted (~2.8 MB).
+  `FontRegistrar` registers what the file carries and nothing else.
+
+  Previously this package bundled the same six families Certigniter did, and
+  Certigniter left their bytes out of exports on the assumption the rendering
+  server had matching copies. That made a file's fidelity depend on the
+  consumer's inventory rather than on the file, and it failed quietly: the
+  moment the two lists drifted, a project rendered in the fallback font with
+  the file still perfectly valid. It had already happened - the web Studio
+  had added IBM Plex Mono, which no plugin shipped. Moving fonts into the ZIP
+  as binary members also cut what embedding costs: the two families of a
+  typical project are ~0.57 MB compressed against ~2.47 MB of base64 in the
+  old envelope, and they no longer sit inside the AES stream that has to be
+  decrypted in full before the first element can be drawn.
+
+### Removed
+
+- Reading the pre-ZIP `.igniter` form. `CertificateRenderer::parseIgniter()`
+  no longer falls back to decrypting a bare envelope, and
+  `IgniterPackage::isPackage()` - which only existed to choose between the
+  two - is gone. `Support\Encryption` stays: it protects `manifest.json`
+  inside the archive, and is still the interop point with the Design Studio's
+  `EncryptionUtil`.
+
+- The bundled font files and every setting that pointed at them.
+  `config('certigniter.fonts')` and `config('certigniter.fallback_font')` are
+  gone, and `CertificateRenderer`'s `$fonts`, `$fallbackFontRelativePath` and
+  `$fontsBasePath` constructor arguments with them.
+  `FontRegistrar` now takes just `$embeddedFonts` and `$fontCachePath`.
+
+  **Upgrading:** re-export your templates from Certigniter. A project that
+  names a family it carries no bytes for renders in Dompdf's own bundled
+  DejaVu Sans (`FontRegistrar::FALLBACK_FAMILY`).
+
 ## [2.1.0] - 2026-09-02
 
 ### Changed

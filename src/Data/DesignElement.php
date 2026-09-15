@@ -81,15 +81,34 @@ class DesignElement
 
     /**
      * True for a QR code whose Design Studio "Content source" is set to
-     * "Authentication link" rather than "Custom value". The Studio always
-     * saves this element's `data` as an empty string - the real payload
-     * (e.g. a per-recipient verification URL) doesn't exist until issuance
-     * and must be supplied by the host application via `qrCodeOverrides`.
-     * The Studio enforces at most one such element per project.
+     * "Verification link" (formerly "Authentication link" - `qrType:
+     * 'authentication'` is a legacy value still carried by older saved
+     * projects/`.igniter` files and must keep resolving identically) rather
+     * than "Custom value" or "Dynamic value". The Studio always saves this
+     * element's `data` as an empty string - the real payload (e.g. a
+     * per-recipient verification URL) doesn't exist until issuance and must
+     * be supplied by the host application via `qrCodeOverrides`. The Studio
+     * enforces at most one such element per project.
      */
     public function isQrAuthenticationLink(): bool
     {
-        return $this->type === 'qrcode' && $this->property('qrType', 'custom') === 'authentication';
+        return $this->type === 'qrcode' && in_array($this->property('qrType', 'custom'), ['verification', 'authentication'], true);
+    }
+
+    /**
+     * True for a QR code whose Design Studio "Content source" is set to
+     * "Dynamic value" - bound to exactly one recipient/CSV column named in
+     * `properties.variableName`. Both Design Studio editors also mirror that
+     * column name into `data` as `{{ variableName }}` for backward
+     * compatibility, so RecipientMerge's existing case-sensitive
+     * `{{token}}`/`<token>` substitution on `data` already resolves it
+     * correctly without reading `variableName` directly - this accessor
+     * exists purely so renderer code can recognize/report on the type
+     * explicitly, the same way it already does for `isQrAuthenticationLink()`.
+     */
+    public function isDynamicQr(): bool
+    {
+        return $this->type === 'qrcode' && $this->property('qrType', 'custom') === 'dynamic';
     }
 
     /**

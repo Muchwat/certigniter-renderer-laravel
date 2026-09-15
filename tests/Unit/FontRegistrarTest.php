@@ -9,14 +9,11 @@ use PHPUnit\Framework\TestCase;
 
 class FontRegistrarTest extends TestCase
 {
-    private string $fontsBasePath;
-
     private string $cachePath;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->fontsBasePath = dirname(__DIR__, 2).'/resources/fonts';
         $this->cachePath = sys_get_temp_dir().'/certigniter-font-registrar-test-'.uniqid();
         mkdir($this->cachePath, 0700, true);
     }
@@ -30,13 +27,7 @@ class FontRegistrarTest extends TestCase
 
     private function registrar(array $embeddedFonts = []): FontRegistrar
     {
-        return new FontRegistrar(
-            fonts: ['Roboto' => ['normal' => 'Roboto/Roboto-Regular.ttf', 'bold' => 'Roboto/Roboto-Bold.ttf']],
-            fallbackRelativePath: 'Inter/Inter-VariableFont.ttf',
-            basePath: $this->fontsBasePath,
-            embeddedFonts: $embeddedFonts,
-            fontCachePath: $this->cachePath,
-        );
+        return new FontRegistrar($embeddedFonts, $this->cachePath);
     }
 
     /**
@@ -51,39 +42,55 @@ class FontRegistrarTest extends TestCase
         $options->setFontDir($this->cachePath);
         $options->setFontCache($this->cachePath);
         $options->setTempDir($this->cachePath);
-        $options->setChroot([$this->fontsBasePath, $this->cachePath]);
+        $options->setChroot([$this->cachePath, FontRegistrar::builtInFontDirectory($options)]);
 
         return new Dompdf($options);
     }
 
-    public function test_resolve_family_returns_a_bundled_family_verbatim(): void
+    /**
+     * Any real TTF will do as a stand-in for "a font the project carried".
+     * Dompdf's own bundled copy is used so this package needs no font
+     * fixtures of its own - which is the whole point of the change these
+     * tests cover.
+     */
+    private function embeddableFontBytes(): string
     {
-        $this->assertSame('Roboto', $this->registrar()->resolveFamily('Roboto'));
+        $path = FontRegistrar::builtInFontDirectory(new Options).'/DejaVuSans.ttf';
+        $bytes = file_get_contents($path);
+        $this->assertNotFalse($bytes, "expected Dompdf to ship a readable {$path}");
+
+        return $bytes;
     }
 
-    public function test_resolve_family_falls_back_to_inter_for_an_unbundled_family(): void
+    public function test_resolve_family_falls_back_for_a_family_the_project_carried_no_bytes_for(): void
     {
-        $this->assertSame('Inter', $this->registrar()->resolveFamily('Some Random System Font'));
-        $this->assertSame('Inter', $this->registrar()->resolveFamily(null));
+        $this->assertSame(FontRegistrar::FALLBACK_FAMILY, $this->registrar()->resolveFamily('Some Random System Font'));
+        $this->assertSame(FontRegistrar::FALLBACK_FAMILY, $this->registrar()->resolveFamily(null));
     }
 
+    /**
+     * The package ships no font files, so a family is only ever honoured
+     * because the .igniter carried its bytes - there is no longer any
+     * "bundled family" path that could resolve one without them.
+     */
     public function test_resolve_family_recognizes_a_registered_embedded_family_only_after_register_all_runs(): void
     {
-        $fontBytes = file_get_contents($this->fontsBasePath.'/Roboto/Roboto-Regular.ttf');
+        $fontBytes = $this->embeddableFontBytes();
         $registrar = $this->registrar([
             'Custom Project Font' => ['normal' => base64_encode($fontBytes), 'bold' => base64_encode($fontBytes)],
         ]);
 
-        $this->assertSame('Inter', $registrar->resolveFamily('Custom Project Font'), 'not registered yet');
+        $this->assertSame(FontRegistrar::FALLBACK_FAMILY, $registrar->resolveFamily('Custom Project Font'), 'not registered yet');
 
         $registrar->registerAll($this->dompdf());
 
         $this->assertSame('Custom Project Font', $registrar->resolveFamily('Custom Project Font'));
+        $this->assertSame(['Custom Project Font'], $registrar->embeddedFamilies());
     }
 
     public function test_register_all_writes_a_cached_ttf_file_for_an_embedded_font(): void
     {
-        $fontBytes = file_get_contents($this->fontsBasePath.'/Roboto/Roboto-Regular.ttf');
+        $fontBytes = $this->embeddableFontBytes();
         $registrar = $this->registrar([
             'Custom Project Font' => ['normal' => 'data:font/ttf;base64,'.base64_encode($fontBytes)],
         ]);
@@ -103,7 +110,8 @@ class FontRegistrarTest extends TestCase
 
         $registrar->registerAll($this->dompdf());
 
-        $this->assertSame('Inter', $registrar->resolveFamily('Broken Font'));
+        $this->assertSame(FontRegistrar::FALLBACK_FAMILY, $registrar->resolveFamily('Broken Font'));
+        $this->assertSame([], $registrar->embeddedFamilies());
     }
 
     public function test_baseline_correction_ratio_is_the_reference_value_for_a_family_with_no_cached_metrics(): void
@@ -113,38 +121,37 @@ class FontRegistrarTest extends TestCase
         $this->assertSame(0.0875, $this->registrar()->baselineCorrectionRatio('Unknown Family'));
     }
 
-    public function test_baseline_correction_ratio_matches_the_legacy_flat_constant_for_the_font_it_was_tuned_against(): void
+    /**
+     * The correction has to come from the embedded file's own hhea table,
+     * not from the flat reference constant - otherwise a project's font
+     * would render at whatever vertical offset suited some other font.
+     * DejaVu Sans' ascent ratio (~0.7974) is close to, but measurably
+     * distinct from, the 0.791672 reference point.
+     */
+    public function test_baseline_correction_ratio_is_derived_from_a_registered_embedded_font_file(): void
+    {
+        $registrar = $this->registrar([
+            'Custom Project Font' => ['normal' => base64_encode($this->embeddableFontBytes())],
+        ]);
+        $registrar->registerAll($this->dompdf());
+
+        $ratio = $registrar->baselineCorrectionRatio('Custom Project Font');
+        $this->assertEqualsWithDelta(0.0781, $ratio, 0.001);
+        $this->assertNotEquals(0.0875, $ratio, 'expected real metrics, not the no-metrics fallback');
+    }
+
+    public function test_register_all_measures_the_fallback_family_from_dompdfs_own_bundled_font(): void
     {
         $registrar = $this->registrar();
         $registrar->registerAll($this->dompdf());
 
-        // Roboto's real ascent/descent split (hhea: 1900/-500 at 2048
-        // units/em) is what the reference point in
-        // baselineCorrectionRatioForMetrics() was measured against, so
-        // registering the real font file should reproduce ~0.0875, not
-        // just return it as an unrelated fallback.
-        $this->assertEqualsWithDelta(0.0875, $registrar->baselineCorrectionRatio('Roboto'), 0.001);
-    }
-
-    public function test_baseline_correction_ratio_differs_for_a_font_with_a_meaningfully_different_ascent_descent_split(): void
-    {
-        $registrar = new FontRegistrar(
-            fonts: [
-                'Roboto' => ['normal' => 'Roboto/Roboto-Regular.ttf', 'bold' => 'Roboto/Roboto-Bold.ttf'],
-                'Cinzel' => ['normal' => 'Cinzel/Cinzel-Regular.ttf', 'bold' => 'Cinzel/Cinzel-Bold.ttf'],
-            ],
-            fallbackRelativePath: 'Inter/Inter-VariableFont.ttf',
-            basePath: $this->fontsBasePath,
-            fontCachePath: $this->cachePath,
+        // The fallback needs real metrics for the same reason every other
+        // family does, and gets them without this package shipping a file.
+        $this->assertEqualsWithDelta(
+            0.0781,
+            $registrar->baselineCorrectionRatio(FontRegistrar::FALLBACK_FAMILY),
+            0.001,
         );
-        $registrar->registerAll($this->dompdf());
-
-        // Cinzel's ascent ratio (~0.724) is well below Roboto's (~0.792),
-        // so it must land on a visibly different correction, not silently
-        // fall through to the same flat value.
-        $roboto = $registrar->baselineCorrectionRatio('Roboto');
-        $cinzel = $registrar->baselineCorrectionRatio('Cinzel');
-        $this->assertGreaterThan(0.05, abs($roboto - $cinzel));
     }
 
     public function test_baseline_correction_ratio_for_metrics_reproduces_the_measured_old_english_text_mt_correction(): void
@@ -164,6 +171,21 @@ class FontRegistrarTest extends TestCase
         ]);
 
         $this->assertEqualsWithDelta(-0.0263, $ratio, 0.001);
+    }
+
+    /**
+     * Roboto is no longer shipped, but it is still the font the reference
+     * point was measured against, so its real split must keep reproducing
+     * the legacy flat constant.
+     */
+    public function test_baseline_correction_ratio_for_metrics_matches_the_legacy_flat_constant_for_robotos_split(): void
+    {
+        $ratio = FontRegistrar::baselineCorrectionRatioForMetrics([
+            'ascent' => 1900 / 2048,
+            'descent' => 500 / 2048,
+        ]);
+
+        $this->assertEqualsWithDelta(0.0875, $ratio, 0.001);
     }
 
     public function test_baseline_correction_ratio_for_metrics_returns_the_reference_ratio_for_null_or_empty_metrics(): void

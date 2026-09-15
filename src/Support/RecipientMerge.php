@@ -24,6 +24,14 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
  *    replaced, for every column in the record, case-SENSITIVE and
  *    NOT trimmed (the token must match the CSV header exactly, after the
  *    header itself was already whitespace-normalized on parse).
+ *
+ * A qrcode element's `qrType: 'dynamic'` ("Dynamic value" in the Design
+ * Studio) is bound to one column via `properties.variableName`, but that
+ * property is never read here directly - both Studio editors mirror it into
+ * `data` as `{{ variableName }}` on every edit, so it already resolves
+ * through the ordinary qrcode/barcode token-substitution path above, the
+ * same way a manually-typed `{{token}}` in a `qrType: 'custom'` QR does. See
+ * DesignElement::isDynamicQr().
  */
 class RecipientMerge
 {

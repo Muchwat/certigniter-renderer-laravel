@@ -6,8 +6,8 @@ use Certigniter\CertificateRenderer\CertificateRenderer;
 use Illuminate\Support\Facades\Facade;
 
 /**
- * @method static string renderIgniterToPdf(string $encryptedIgniterContent, ?array $recipient = null, ?string $encryptionKey = null, array $imageOverrides = [], array $qrCodeOverrides = [])
- * @method static \Certigniter\CertificateRenderer\Data\CertificateProject parseIgniter(string $encryptedIgniterContent, ?string $encryptionKey = null)
+ * @method static string renderIgniterToPdf(string $igniterContents, ?array $recipient = null, ?string $encryptionKey = null, array $imageOverrides = [], array $qrCodeOverrides = [])
+ * @method static \Certigniter\CertificateRenderer\Data\CertificateProject parseIgniter(string $igniterContents, ?string $encryptionKey = null)
  * @method static string renderProjectToPdf(\Certigniter\CertificateRenderer\Data\CertificateProject $project, ?array $recipient = null, array $imageOverrides = [], array $qrCodeOverrides = [])
  * @method static string[] warnings()
  *

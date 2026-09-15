@@ -23,65 +23,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Bundled fonts
+    | Fonts
     |--------------------------------------------------------------------------
     |
-    | The font families Certigniter bundles as real .ttf files rather than
-    | relying on whatever is installed on the machine doing the rendering.
-    | Because both sides ship them, a project does not need to carry their
-    | bytes, so Certigniter leaves them out of the file by default.
+    | There is nothing to configure here any more, and that is the point.
     |
-    | Keeping this list in step with Certigniter's own bundled families
-    | matters: the moment Certigniter adds one and stops embedding it, a
-    | server without the same .ttf here renders it in 'fallback_font'
-    | instead - silently, since the file is otherwise perfectly valid.
+    | This package used to ship .ttf files for the families Certigniter
+    | bundles, and Certigniter left their bytes out of exported files on the
+    | assumption that the rendering server had the same copies. That made a
+    | file's fidelity depend on the consumer's inventory: the moment the two
+    | lists drifted, a project rendered in the fallback font instead -
+    | silently, since the file itself was perfectly valid.
     |
-    | Any other fontFamily falls back to 'fallback_font' below, unless the
-    | project carries that family's bytes in its own `embedded_fonts` (see
-    | FontRegistrar).
+    | Certigniter now embeds every font a project uses into the .igniter,
+    | where the ZIP container stores it as compressed binary rather than
+    | base64 inside the encrypted manifest. So this package ships no fonts,
+    | installs ~2.8 MB lighter, and renders a family if and only if the file
+    | carries it.
     |
-    | Keys are the exact `fontFamily` strings Certigniter stores in a
-    | project's JSON. Paths are relative to this package's resources/fonts
-    | directory.
+    | A family a project names but carries no bytes for renders in Dompdf's
+    | own built-in DejaVu Sans (FontRegistrar::FALLBACK_FAMILY). To render
+    | such a project faithfully, re-save it from Certigniter so its fonts
+    | travel with it.
     |
     */
-    'fonts' => [
-        'Playfair Display' => [
-            'normal' => 'PlayfairDisplay/PlayfairDisplay-Regular.ttf',
-            'bold' => 'PlayfairDisplay/PlayfairDisplay-Bold.ttf',
-        ],
-        'Cormorant Garamond' => [
-            'normal' => 'CormorantGaramond/CormorantGaramond-Regular.ttf',
-            'bold' => 'CormorantGaramond/CormorantGaramond-Bold.ttf',
-        ],
-        'Cinzel' => [
-            'normal' => 'Cinzel/Cinzel-Regular.ttf',
-            'bold' => 'Cinzel/Cinzel-Bold.ttf',
-        ],
-        'Roboto' => [
-            'normal' => 'Roboto/Roboto-Regular.ttf',
-            'bold' => 'Roboto/Roboto-Bold.ttf',
-        ],
-        'Montserrat' => [
-            'normal' => 'Montserrat/Montserrat-Regular.ttf',
-            'bold' => 'Montserrat/Montserrat-Bold.ttf',
-        ],
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Fallback font
-    |--------------------------------------------------------------------------
-    |
-    | Used for any fontFamily that is neither listed above nor carried as
-    | font bytes inside the .igniter file itself. In practice that means a
-    | system font from a project saved before Certigniter embedded those -
-    | the file stores only the family *name*, which a server has no way to
-    | resolve. Matches Certigniter's own fallback
-    | (assets/fonts/Inter/Inter-VariableFont.ttf).
-    |
-    */
-    'fallback_font' => 'Inter/Inter-VariableFont.ttf',
 
     /*
     |--------------------------------------------------------------------------

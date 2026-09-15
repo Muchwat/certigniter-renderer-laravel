@@ -10,6 +10,10 @@ use RuntimeException;
  * shape (`{"iv": base64, "value": base64}`), same mode/padding, key used
  * as raw UTF-8 bytes (`Key.fromUtf8` on the Dart side - not derived via a
  * KDF, so it must be exactly 32 bytes to select AES-256).
+ *
+ * This protects the `manifest.json` member inside a `.igniter` package, not
+ * the package as a whole - images and fonts sit alongside it as plain
+ * compressed archive members. See IgniterPackage.
  */
 class Encryption
 {
@@ -20,21 +24,21 @@ class Encryption
         $envelope = json_decode($encryptedJson, true);
 
         if (! is_array($envelope) || ! isset($envelope['iv'], $envelope['value'])) {
-            throw new RuntimeException('Not a valid .igniter envelope: expected {"iv": ..., "value": ...} JSON.');
+            throw new RuntimeException('Not a valid .igniter manifest: expected {"iv": ..., "value": ...} JSON.');
         }
 
         $iv = base64_decode($envelope['iv'], true);
         $ciphertext = base64_decode($envelope['value'], true);
 
         if ($iv === false || $ciphertext === false) {
-            throw new RuntimeException('Not a valid .igniter envelope: iv/value are not valid base64.');
+            throw new RuntimeException('Not a valid .igniter manifest: iv/value are not valid base64.');
         }
 
         $plaintext = openssl_decrypt($ciphertext, self::CIPHER, $key, OPENSSL_RAW_DATA, $iv);
 
         if ($plaintext === false) {
             throw new RuntimeException(
-                'Failed to decrypt .igniter payload - the encryption key does not match the one used to '
+                'Failed to decrypt the .igniter manifest - the encryption key does not match the one used to '
                 .'save this file (config("certigniter.encryption_key") / CERTIGNITER_ENCRYPTION_KEY).'
             );
         }

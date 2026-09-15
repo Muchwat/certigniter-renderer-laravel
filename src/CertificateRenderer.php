@@ -6,9 +6,9 @@ use Certigniter\CertificateRenderer\Data\CertificateProject;
 use Certigniter\CertificateRenderer\Data\DesignElement;
 use Certigniter\CertificateRenderer\Support\BarcodeRenderer;
 use Certigniter\CertificateRenderer\Support\ColorConverter;
-use Certigniter\CertificateRenderer\Support\Encryption;
 use Certigniter\CertificateRenderer\Support\FontRegistrar;
 use Certigniter\CertificateRenderer\Support\GroupComposer;
+use Certigniter\CertificateRenderer\Support\IgniterPackage;
 use Certigniter\CertificateRenderer\Support\QrCodeRenderer;
 use Certigniter\CertificateRenderer\Support\RecipientMerge;
 use Dompdf\Dompdf;
@@ -27,21 +27,17 @@ class CertificateRenderer
     private array $warnings = [];
 
     /**
-     * @param  array<string, array{normal: string, bold: string}>  $fonts
      * @param  string  $ghostscriptBinary  executable used by capture() to rasterize a PDF to PNG -
      *                                     shelled out to directly (no `imagick` extension involved)
      */
     public function __construct(
         private readonly string $encryptionKey,
-        private readonly array $fonts,
-        private readonly string $fallbackFontRelativePath,
-        private readonly string $fontsBasePath,
         private readonly bool $composeGroupTransforms,
         private readonly string $ghostscriptBinary = 'gs',
     ) {}
 
     /**
-     * Decrypt an .igniter file's raw content and render it straight to PDF
+     * Unpack a .igniter package's raw bytes and render it straight to PDF
      * bytes. This is the one-call entry point most callers want.
      *
      * @param  array<string, string>|null  $recipient  a single row from a
@@ -54,13 +50,13 @@ class CertificateRenderer
      *                                                  application) - see DesignElement::isQrAuthenticationLink()
      */
     public function renderIgniterToPdf(
-        string $encryptedIgniterContent,
+        string $igniterContents,
         ?array $recipient = null,
         ?string $encryptionKey = null,
         array $imageOverrides = [],
         array $qrCodeOverrides = [],
     ): string {
-        $project = $this->parseIgniter($encryptedIgniterContent, $encryptionKey);
+        $project = $this->parseIgniter($igniterContents, $encryptionKey);
 
         return $this->renderProjectToPdf($project, $recipient, $imageOverrides, $qrCodeOverrides);
     }
@@ -81,7 +77,7 @@ class CertificateRenderer
      * @return string the path the PNG was written to (== $outputPath when given)
      */
     public function capture(
-        string $encryptedIgniterContent,
+        string $igniterContents,
         ?array $recipient = null,
         ?string $encryptionKey = null,
         array $imageOverrides = [],
@@ -89,7 +85,7 @@ class CertificateRenderer
         ?string $outputPath = null,
         int $resolution = 150,
     ): string {
-        $pdf = $this->renderIgniterToPdf($encryptedIgniterContent, $recipient, $encryptionKey, $imageOverrides, $qrCodeOverrides);
+        $pdf = $this->renderIgniterToPdf($igniterContents, $recipient, $encryptionKey, $imageOverrides, $qrCodeOverrides);
 
         return $this->pdfToPngThumbnail($pdf, $outputPath ?? tempnam(sys_get_temp_dir(), 'certigniter-thumb-').'.png', $resolution);
     }
@@ -179,19 +175,19 @@ class CertificateRenderer
     }
 
     /**
-     * Decrypt and parse an .igniter payload without rendering it. Useful for
+     * Unpack and parse a `.igniter` package without rendering it. Useful for
      * discovering recipient fields and replaceable image element IDs.
+     *
+     * A `.igniter` is a ZIP container: an AES-encrypted `manifest.json`
+     * describing the project, plus the raw image and font bytes it references
+     * under `assets/`. See IgniterPackage for the layout and the checks
+     * applied to it.
      */
-    public function parseIgniter(string $encryptedIgniterContent, ?string $encryptionKey = null): CertificateProject
+    public function parseIgniter(string $igniterContents, ?string $encryptionKey = null): CertificateProject
     {
-        $json = Encryption::decrypt($encryptedIgniterContent, $encryptionKey ?? $this->encryptionKey);
-        $decoded = json_decode($json, true);
-
-        if (! is_array($decoded)) {
-            throw new RuntimeException('Decrypted .igniter payload is not valid JSON.');
-        }
-
-        return CertificateProject::fromArray($decoded);
+        return CertificateProject::fromArray(
+            IgniterPackage::decode($igniterContents, $encryptionKey ?? $this->encryptionKey)
+        );
     }
 
     /**
@@ -225,17 +221,11 @@ class CertificateRenderer
         if (! is_dir($fontCachePath) && ! mkdir($fontCachePath, 0700, true) && ! is_dir($fontCachePath)) {
             throw new RuntimeException("Unable to create the temporary font cache: {$fontCachePath}");
         }
-        $fonts = new FontRegistrar(
-            $this->fonts,
-            $this->fallbackFontRelativePath,
-            $this->fontsBasePath,
-            $project->embeddedFonts,
-            $fontCachePath,
-        );
+        $fonts = new FontRegistrar($project->embeddedFonts, $fontCachePath);
 
         $options = new Options;
         $options->setIsRemoteEnabled(false);
-        $options->setDefaultFont('Inter');
+        $options->setDefaultFont(FontRegistrar::FALLBACK_FAMILY);
         // Dompdf expands every font's measured line box by 10% by default.
         // Certigniter's Flutter and package:pdf renderers use the font's
         // actual metrics and then add only the saved `lineHeight` leading,
@@ -244,7 +234,10 @@ class CertificateRenderer
         $options->setFontDir($fontCachePath);
         $options->setFontCache($fontCachePath);
         $options->setTempDir($fontCachePath);
-        $options->setChroot([$this->fontsBasePath, $fontCachePath]);
+        // The font cache is the only directory this package reads font files
+        // from now that it ships none of its own; Dompdf's own lib/fonts is
+        // added so the built-in fallback family stays loadable under chroot.
+        $options->setChroot([$fontCachePath, FontRegistrar::builtInFontDirectory($options)]);
         $dompdf = new Dompdf($options);
         $fonts->registerAll($dompdf);
 
@@ -408,9 +401,19 @@ class CertificateRenderer
 
                     if ($data === '' && $element->isQrAuthenticationLink()) {
                         $this->warnings[] = sprintf(
-                            "Element %s: this QR code's content source is 'Authentication link' but no value was "
+                            "Element %s: this QR code's content source is 'Verification link' but no value was "
                             .'supplied for it - pass its element ID and the value to encode (e.g. a verification '
                             .'URL) in $qrCodeOverrides. It was skipped.',
+                            $element->id,
+                        );
+
+                        continue;
+                    }
+
+                    if ($data === '' && $element->isDynamicQr()) {
+                        $this->warnings[] = sprintf(
+                            "Element %s: this QR code's content source is 'Dynamic value' but no data column was "
+                            .'ever set for it (properties.variableName is empty). It was skipped.',
                             $element->id,
                         );
 

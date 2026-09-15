@@ -5,7 +5,7 @@ Laravel application—without Flutter, the desktop application, or a browser.
 
 The package can:
 
-- decrypt and inspect uploaded `.igniter` files;
+- open and inspect uploaded `.igniter` files;
 - discover recipient fields before issuing;
 - render individual or bulk certificates;
 - replace foreign logos, signatures, and other images at issue time;
@@ -37,6 +37,7 @@ The package can:
 
 - PHP 8.2 or newer
 - Laravel 11 or 12
+- The `zip` PHP extension (`ext-zip`) - a `.igniter` file is a ZIP container
 - A writable system temporary directory for Dompdf's font cache
 - The PHP extensions required by Dompdf, Simple QR Code, and the selected
   image formats
@@ -87,9 +88,12 @@ decryption to fail before parsing or rendering begins.
 
 The published configuration also controls:
 
-- bundled font-family mappings;
-- the fallback font;
-- composition of parent-group rotation and opacity.
+- composition of parent-group rotation and opacity;
+- the Ghostscript binary used by `capture()`.
+
+There is nothing to configure for fonts. This package ships none: every family
+a certificate uses travels inside the `.igniter` file (see
+[Fonts](#fonts)).
 
 Views can be published only when a project genuinely needs to customize the
 renderer markup:
@@ -261,16 +265,25 @@ guessing at a translation.
 
 ## Dynamic QR code values
 
-A QR element's Design Studio "Content source" is either:
+A QR element's Design Studio "Content source" (`qrType`) is one of:
 
-- **Custom value** - a static string, optionally containing `{{token}}`/
-  `<token>` placeholders resolved from `recipient` like any other
-  QR/barcode data (see above); or
-- **Authentication link** - the element intentionally stores no `data` at
-  all. Its real payload doesn't exist until the certificate is issued, so
-  it must be supplied by your application at render time - typically a
-  unique verification URL such as `https://you.example.com/verify/{id}`.
-  A project has at most one of these (the Design Studio enforces it).
+- **Custom value** (`'custom'`) - a static string, optionally containing
+  `{{token}}`/`<token>` placeholders resolved from `recipient` like any
+  other QR/barcode data (see above); or
+- **Dynamic value** (`'dynamic'`) - bound to exactly one recipient/CSV
+  column, named in `properties.variableName` and mirrored into `data` as
+  `{{ variableName }}` - resolves through the same `{{token}}`/`<token>`
+  substitution as a custom value, just always naming one column rather than
+  free text (not to be confused with this section's own "dynamic QR code
+  values" - the `qrCodeOverrides` mechanism below - which is a different,
+  host-application-driven kind of dynamic content); or
+- **Verification link** (`'verification'` - `'authentication'` is a legacy
+  value older projects may still carry, and is accepted identically) - the
+  element intentionally stores no `data` at all. Its real payload doesn't
+  exist until the certificate is issued, so it must be supplied by your
+  application at render time - typically a unique verification URL such as
+  `https://you.example.com/verify/{id}`. A project has at most one of these
+  (the Design Studio enforces it).
 
 Use `$project->authenticationQrElementId()` to find whether (and where)
 a parsed project has one, then pass the value you generated in
@@ -291,11 +304,11 @@ $pdf = $renderer->renderProjectToPdf(
 );
 ```
 
-`qrCodeOverrides` accepts any qrcode element ID, not only an authentication
+`qrCodeOverrides` accepts any qrcode element ID, not only a verification
 link - an explicit override always wins over both a static `data` value and
 `{{token}}`/`<token>` substitution, so it also works as a direct escape
 hatch for a value your application computed rather than one that came from
-a recipient record. If an authentication-link QR code has no override
+a recipient record. If a verification-link QR code has no override
 supplied for it, it is skipped with a warning (see below) rather than
 encoding an empty or placeholder string into the certificate.
 
@@ -346,7 +359,7 @@ upload MIME type and size in the host Laravel application before encoding.
 
 ## Bulk issuance
 
-For bulk work, decrypt and parse once, then reuse the project and image map:
+For bulk work, parse once, then reuse the project and image map:
 
 ```php
 $project = $renderer->parseIgniter($encrypted);
@@ -369,7 +382,7 @@ foreach ($recipients as $index => $recipient) {
 }
 ```
 
-Parsing once avoids repeatedly decrypting and decoding the same template.
+Parsing once avoids repeatedly unpacking and decoding the same template.
 Each `renderProjectToPdf()` call creates an independent PDF and resets the
 warning list.
 
@@ -410,8 +423,9 @@ Typical warnings include:
   provided;
 - a QR/barcode token was not resolved;
 - barcode data is invalid for its selected symbology;
-- an "Authentication link" QR code had no value supplied for it in
-  `qrCodeOverrides`.
+- a "Verification link" QR code had no value supplied for it in
+  `qrCodeOverrides`;
+- a "Dynamic value" QR code had no data column ever set for it.
 
 ## Public API
 
@@ -419,7 +433,7 @@ Typical warnings include:
 
 ```php
 renderIgniterToPdf(
-    string $encryptedIgniterContent,
+    string $igniterContents,
     ?array $recipient = null,
     ?string $encryptionKey = null,
     array $imageOverrides = [],
@@ -427,7 +441,7 @@ renderIgniterToPdf(
 ): string
 ```
 
-Convenience entry point that decrypts, parses, merges, overrides images and
+Convenience entry point that unpacks, parses, merges, overrides images and
 QR code values, and returns PDF bytes. Pass a per-request encryption key only
 when intentionally supporting files from a different trusted key domain.
 
@@ -435,12 +449,12 @@ when intentionally supporting files from a different trusted key domain.
 
 ```php
 parseIgniter(
-    string $encryptedIgniterContent,
+    string $igniterContents,
     ?string $encryptionKey = null,
 ): Data\CertificateProject
 ```
 
-Decrypts and parses without rendering.
+Unpacks and parses without rendering.
 
 ### `renderProjectToPdf()`
 
@@ -459,7 +473,7 @@ Preferred rendering method after a project has already been inspected.
 
 ```php
 capture(
-    string $encryptedIgniterContent,
+    string $igniterContents,
     ?array $recipient = null,
     ?string $encryptionKey = null,
     array $imageOverrides = [],
@@ -519,7 +533,7 @@ $project->authenticationQrElementId(): ?string;
 `getElementIds()` is an alias of `elementCatalog()` and returns the same rich
 metadata. Use `getElementIds('image')` for a logo/signature replacement UI.
 `authenticationQrElementId()` returns the element ID of the project's
-"Authentication link" QR code, or `null` if it has none - see
+"Verification link" QR code, or `null` if it has none - see
 [Dynamic QR code values](#dynamic-qr-code-values).
 
 ## Rendering compatibility
@@ -540,17 +554,29 @@ metadata. Use `getElementIds('image')` for a logo/signature replacement UI.
 | QR codes | Yes |
 | Code39, EAN-13, EAN-8, UPC-A, ITF, Codabar, Code128 | Yes |
 | Group rotation and opacity composition | Yes, configurable |
-| Embedded project fonts | Yes |
-| Bundled Certigniter font families | Yes |
+| Fonts carried inside the `.igniter` | Yes |
 
 Typography values are converted from Certigniter's 96-DPI canvas pixels to
 72-DPI PDF points. This prevents the approximately 1.33× text enlargement
 seen in older exporters and keeps titles aligned with the Design Studio.
 
-Current projects may contain `embedded_fonts`; these are registered for the
-render. For projects that only store a font-family name, the package uses its
-bundled Playfair Display, Cormorant Garamond, Cinzel, Roboto, and Montserrat
-files, then falls back to Inter for unavailable system fonts.
+### Fonts
+
+A `.igniter` file is self-contained: every font family it uses travels inside
+it, as raw members of the archive's `assets/fonts/` tree. This package ships no
+font files of its own and registers exactly what the file carries.
+
+That is a change from earlier versions, which bundled Playfair Display,
+Cormorant Garamond, Cinzel, Roboto, Montserrat, and Inter, and relied on
+Certigniter leaving those families out of exports. That made a file's fidelity
+depend on the renderer's inventory rather than on the file, and it failed
+silently when the two drifted apart - a valid file simply rendered in the
+wrong typeface. It also made this package about 2.8 MB heavier for every
+install, most of which no given certificate needed.
+
+A family the file names but carries no bytes for renders in Dompdf's own
+built-in DejaVu Sans. Re-save such a project from Certigniter so its fonts
+travel with it.
 
 ### Known limitations
 
@@ -566,7 +592,11 @@ files, then falls back to Inter for unavailable system fonts.
 - Treat `CERTIGNITER_ENCRYPTION_KEY` as a shared secret. Do not commit it.
 - Validate uploaded file size and MIME type before reading it into memory.
 - Do not trust original image paths from uploaded templates. Remote access is
-  disabled and Dompdf is restricted to package font/cache directories.
+  disabled and Dompdf is restricted to the font cache directory.
+- Uploaded `.igniter` packages are read without ever being extracted to disk.
+  The reader enforces per-file and total size limits and rejects unknown or
+  duplicate archive paths, symlinks, ZIP-level encryption, unsupported
+  compression, and checksum mismatches.
 - Authorize who may render, inspect, or replace certificate assets.
 - Escape user-facing metadata when displaying project titles or element names.
 - Use queues and execution limits for bulk issuance.
@@ -575,7 +605,7 @@ files, then falls back to Inter for unavailable system fonts.
 
 ## Troubleshooting
 
-### The `.igniter` file cannot be decrypted
+### The `.igniter` file cannot be opened
 
 Confirm `CERTIGNITER_ENCRYPTION_KEY` matches the Certigniter application that
 created the file. Clear Laravel's cached configuration after changing `.env`:
@@ -600,11 +630,18 @@ to PDF points. Also verify the template's font is embedded or included in
 Ensure all merge tokens were supplied and the resulting value is valid for
 the selected barcode format. Read `warnings()` for the element ID and cause.
 
-### A custom font falls back to Inter
+### A font falls back to DejaVu Sans
 
-The server needs actual font bytes. Use a template with `embedded_fonts`, add
-the licensed font files to a maintained package customization, or choose a
-bundled family.
+The file carries no bytes for that family, and the package ships no fonts to
+fill the gap. Re-save the project from Certigniter so the family is embedded;
+the renderer then uses those bytes directly. There is no server-side font
+directory to install into.
+
+### An upload is rejected as "not a ZIP container"
+
+A `.igniter` is a ZIP package. A file that starts with anything else is not
+one - most likely it was produced by a build that predates the format, and
+needs re-exporting from Certigniter.
 
 ## Testing
 

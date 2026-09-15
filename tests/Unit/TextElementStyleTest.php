@@ -13,11 +13,7 @@ class TextElementStyleTest extends TestCase
 {
     private function fonts(): FontRegistrar
     {
-        return new FontRegistrar(
-            fonts: ['Roboto' => ['normal' => 'x', 'bold' => 'x']],
-            fallbackRelativePath: 'x',
-            basePath: '',
-        );
+        return new FontRegistrar;
     }
 
     private function element(array $properties): DesignElement
@@ -171,7 +167,7 @@ class TextElementStyleTest extends TestCase
     public function test_baseline_correction_falls_back_to_the_reference_ratio_when_the_font_has_no_cached_metrics(): void
     {
         // $this->fonts() never calls registerAll(), so FontRegistrar has no
-        // parsed ascent/descent for 'Roboto' to scale by - see
+        // parsed ascent/descent for the resolved family to scale by - see
         // FontRegistrarTest for the metrics-driven case.
         $style = $this->describe(['fontSize' => 20.0]);
 

@@ -42,7 +42,7 @@ class EncryptionTest extends TestCase
     public function test_decrypt_throws_on_malformed_envelope_json(): void
     {
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Not a valid .igniter envelope');
+        $this->expectExceptionMessage('Not a valid .igniter manifest');
 
         Encryption::decrypt('{"not":"an envelope"}', self::KEY);
     }

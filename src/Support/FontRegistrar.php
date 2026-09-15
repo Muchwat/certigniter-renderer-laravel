@@ -3,90 +3,103 @@
 namespace Certigniter\CertificateRenderer\Support;
 
 use Dompdf\Dompdf;
+use Dompdf\Options;
 use FontLib\Font;
 
 /**
- * Resolves a project's fonts against the three places its bytes can come
- * from, in the order this class registers them:
+ * Registers a project's own fonts with Dompdf.
  *
- *  1. `$fonts` - our own copy of the families Certigniter bundles, from
- *     this package's resources/fonts. Always available, never depends on
- *     what the designer's machine had installed.
- *  2. `$embeddedFonts` - the font bytes carried inside the .igniter file
- *     itself, decoded and written to `$fontCachePath`. Certigniter always
- *     embeds a *system* font this way, because a family name alone cannot
- *     be reproduced on another machine; it embeds a bundled family too when
- *     the designer exports a self-contained file. Registered second, so an
- *     embedded copy of a family we also bundle wins - harmless, since both
- *     sides ship byte-identical files.
- *  3. Inter, the fallback, for a family that is in neither - a system font
- *     from a project saved before embedding, which a server genuinely has
- *     no way to reproduce.
+ * This package ships no font files. Every family a certificate uses travels
+ * inside the `.igniter` itself, as raw members of the archive's
+ * `assets/fonts/` tree, and IgniterPackage has already turned those into the
+ * `embedded_fonts` map this class receives. That is what makes a `.igniter`
+ * self-contained: whether a family renders depends on the file, not on what
+ * the machine doing the rendering happens to have installed next to it.
+ *
+ * It used to work the other way around: Certigniter kept a list of families
+ * it bundled on both sides and left their bytes out of the file to keep it
+ * small. That coupling broke quietly whenever the two lists drifted - a
+ * family the designer had and this package didn't rendered as the fallback
+ * with the file still perfectly valid - and the saving it bought disappeared
+ * once fonts moved into the ZIP as compressed binary members instead of
+ * base64 inside the encrypted manifest.
+ *
+ * [FALLBACK_FAMILY] covers what remains genuinely unresolvable: a family a
+ * project names but carries no bytes for. It is Dompdf's own bundled DejaVu
+ * Sans, so the fallback costs this package nothing to ship and is always
+ * available.
  *
  * A variant map may legitimately carry only `normal`: Certigniter drops a
  * `bold` that is byte-identical to it (a system font is located as a single
- * file, and Inter's two cuts are the same variable font). Both weights are
- * still registered, from the one payload, so dompdf emboldens synthetically
- * rather than falling through to Inter.
+ * file, and a variable font's two cuts are the same bytes). Both weights are
+ * still registered, from the one payload, so Dompdf emboldens synthetically
+ * rather than falling through to the fallback.
  */
 class FontRegistrar
 {
+    /**
+     * Dompdf ships this family, so it needs no bytes from us. Registered
+     * under Dompdf's own name for it - do not rename without checking it
+     * still resolves in lib/fonts/installed-fonts.dist.json.
+     */
+    public const FALLBACK_FAMILY = 'DejaVu Sans';
+
+    private const FALLBACK_FONT_FILE = 'DejaVuSans.ttf';
+
     /** @var array<string, true> */
     private array $registeredEmbeddedFamilies = [];
 
     /** @var array<string, array{ascent: float, descent: float}> resolved family => ascent/|descent|, each as a fraction of the font's own em size */
     private array $metrics = [];
 
-    /** @param array<string, array{normal: string, bold: string}> $fonts family name => relative paths under $basePath */
+    /** @param array<string, array{normal?: string, bold?: string}> $embeddedFonts family name => base64 font bytes per variant */
     public function __construct(
-        private readonly array $fonts,
-        private readonly string $fallbackRelativePath,
-        private readonly string $basePath,
         private readonly array $embeddedFonts = [],
         private readonly string $fontCachePath = '',
     ) {}
+
+    /** Absolute path to the directory Dompdf keeps its own built-in fonts in. */
+    public static function builtInFontDirectory(Options $options): string
+    {
+        return $options->getRootDir().'/lib/fonts';
+    }
 
     public function registerAll(Dompdf $dompdf): void
     {
         $metrics = $dompdf->getFontMetrics();
 
-        foreach ($this->fonts as $family => $variants) {
-            foreach ($variants as $weight => $relativePath) {
-                $metrics->registerFont(
-                    ['family' => $family, 'weight' => $weight, 'style' => 'normal'],
-                    $this->basePath.'/'.$relativePath,
-                );
-            }
-            $normalPath = $this->basePath.'/'.($variants['normal'] ?? reset($variants));
-            $this->cacheMetrics($family, $normalPath);
-        }
-
         foreach ($this->embeddedFonts as $family => $variants) {
             $registered = false;
             $normalPath = null;
+
             foreach (['normal', 'bold'] as $weight) {
                 $encoded = $variants[$weight] ?? $variants['normal'] ?? null;
                 if (! is_string($encoded)) {
                     continue;
                 }
+
                 $clean = str_contains($encoded, ',') ? substr($encoded, strpos($encoded, ',') + 1) : $encoded;
                 $bytes = base64_decode($clean, true);
                 if ($bytes === false || $bytes === '') {
                     continue;
                 }
+
                 $path = $this->fontCachePath.'/source-'.hash('sha256', $bytes).'.ttf';
                 if (! is_file($path) && file_put_contents($path, $bytes, LOCK_EX) === false) {
                     continue;
                 }
+
                 $registered = $metrics->registerFont(
                     ['family' => $family, 'weight' => $weight, 'style' => 'normal'],
                     $path,
                 ) || $registered;
+
                 if ($weight === 'normal') {
                     $normalPath = $path;
                 }
                 $normalPath ??= $path;
             }
+
             if ($registered) {
                 $this->registeredEmbeddedFamilies[$family] = true;
                 if ($normalPath !== null) {
@@ -95,24 +108,28 @@ class FontRegistrar
             }
         }
 
-        $fallbackPath = $this->basePath.'/'.$this->fallbackRelativePath;
-        // No separate bold cut is bundled for the fallback - dompdf will
-        // synthetically embolden it, same degradation Certigniter's own
-        // export accepts for any font it only has one weight for.
-        $metrics->registerFont(['family' => 'Inter', 'weight' => 'normal', 'style' => 'normal'], $fallbackPath);
-        $metrics->registerFont(['family' => 'Inter', 'weight' => 'bold', 'style' => 'normal'], $fallbackPath);
-        $this->cacheMetrics('Inter', $fallbackPath);
+        // Dompdf already knows the fallback family - it only needs measuring,
+        // for the same vertical-centering correction every other family gets.
+        $fallbackPath = self::builtInFontDirectory($dompdf->getOptions()).'/'.self::FALLBACK_FONT_FILE;
+        if (is_file($fallbackPath)) {
+            $this->cacheMetrics(self::FALLBACK_FAMILY, $fallbackPath);
+        }
     }
 
-    /** The family name to actually put in generated CSS - $requestedFamily verbatim if it's one we bundle, else the fallback. */
+    /** The family name to actually put in generated CSS - $requestedFamily verbatim if the project carried its bytes, else the fallback. */
     public function resolveFamily(?string $requestedFamily): string
     {
-        if ($requestedFamily !== null &&
-            (isset($this->registeredEmbeddedFamilies[$requestedFamily]) || array_key_exists($requestedFamily, $this->fonts))) {
+        if ($requestedFamily !== null && isset($this->registeredEmbeddedFamilies[$requestedFamily])) {
             return $requestedFamily;
         }
 
-        return 'Inter';
+        return self::FALLBACK_FAMILY;
+    }
+
+    /** Families the current project actually carried bytes for, in the order they were registered. */
+    public function embeddedFamilies(): array
+    {
+        return array_keys($this->registeredEmbeddedFamilies);
     }
 
     private function cacheMetrics(string $family, string $path): void

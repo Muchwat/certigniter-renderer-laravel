@@ -36,13 +36,30 @@ class DesignElementTest extends TestCase
 
     public function test_is_qr_authentication_link_requires_both_type_and_qr_type(): void
     {
+        $verification = new DesignElement(id: 'e', type: 'qrcode', x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => 'verification']);
         $authLink = new DesignElement(id: 'e', type: 'qrcode', x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => 'authentication']);
         $custom = new DesignElement(id: 'e', type: 'qrcode', x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => 'custom']);
-        $barcodeWithSameProperty = new DesignElement(id: 'e', type: 'barcode', x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => 'authentication']);
+        $dynamic = new DesignElement(id: 'e', type: 'qrcode', x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => 'dynamic']);
+        $barcodeWithSameProperty = new DesignElement(id: 'e', type: 'barcode', x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => 'verification']);
 
-        $this->assertTrue($authLink->isQrAuthenticationLink());
+        $this->assertTrue($verification->isQrAuthenticationLink());
+        $this->assertTrue($authLink->isQrAuthenticationLink(), 'the legacy "authentication" value must keep resolving as verification');
         $this->assertFalse($custom->isQrAuthenticationLink());
+        $this->assertFalse($dynamic->isQrAuthenticationLink());
         $this->assertFalse($barcodeWithSameProperty->isQrAuthenticationLink());
+    }
+
+    public function test_is_dynamic_qr_requires_both_type_and_qr_type(): void
+    {
+        $dynamic = new DesignElement(id: 'e', type: 'qrcode', x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => 'dynamic']);
+        $custom = new DesignElement(id: 'e', type: 'qrcode', x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => 'custom']);
+        $verification = new DesignElement(id: 'e', type: 'qrcode', x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => 'verification']);
+        $barcodeWithSameProperty = new DesignElement(id: 'e', type: 'barcode', x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => 'dynamic']);
+
+        $this->assertTrue($dynamic->isDynamicQr());
+        $this->assertFalse($custom->isDynamicQr());
+        $this->assertFalse($verification->isDynamicQr());
+        $this->assertFalse($barcodeWithSameProperty->isDynamicQr());
     }
 
     public function test_content_alignment_defaults_to_text_align_for_text_like_elements_without_a_saved_alignment(): void
