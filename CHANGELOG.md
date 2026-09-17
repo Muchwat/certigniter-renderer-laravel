@@ -2,6 +2,19 @@
 
 All notable changes to this package are documented here.
 
+## [Unreleased]
+
+### Added
+
+- `DesignElement::isAiGenerated()`, and `aiGenerated`/`aiModel`/`aiGeneratedAt`/
+  `aiPromptPreview` in `elementCatalog()`'s per-image `details`, surfacing the
+  attribution Design Studio's AI background tool now stamps on the image
+  element it creates or replaces (`properties.aiGenerated`/`aiModel`/
+  `aiPrompt`/`aiGeneratedAt`). `imageReplacementHint()` now also treats
+  `aiGenerated` as authoritative for the `background` classification, ahead of
+  the existing 90%-of-page-size fallback - a background the issuer has since
+  resized down no longer falls through to `logo`/`signature`/`image`.
+
 ## [3.0.0] - 2026-09-15
 
 ### Added

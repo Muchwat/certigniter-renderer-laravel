@@ -159,6 +159,49 @@ class CertificateProjectTest extends TestCase
         $this->assertFalse($catalog[0]['details']['hasEmbeddedData']);
     }
 
+    public function test_element_catalog_reports_a_background_hint_for_ai_generated_images_even_when_resized_below_the_size_fallback(): void
+    {
+        $raw = $this->rawProject([
+            'elements' => [
+                [
+                    'id' => 'bg', 'type' => 'image', 'x' => 0, 'y' => 0, 'width' => 50, 'height' => 40,
+                    'properties' => [
+                        'aiGenerated' => true,
+                        'aiModel' => 'gemini-3.1-flash-image',
+                        'aiPrompt' => str_repeat('an ornate gold border certificate background ', 5),
+                        'aiGeneratedAt' => '2026-09-17T00:00:00Z',
+                    ],
+                ],
+            ],
+        ]);
+        $project = CertificateProject::fromArray($raw);
+
+        $details = $project->elementCatalog('image')[0]['details'];
+
+        $this->assertSame('background', $details['replacementHint'], 'the aiGenerated tag must win even though this image is far below the 90% size fallback');
+        $this->assertTrue($details['aiGenerated']);
+        $this->assertSame('gemini-3.1-flash-image', $details['aiModel']);
+        $this->assertSame('2026-09-17T00:00:00Z', $details['aiGeneratedAt']);
+        $this->assertStringEndsWith('…', $details['aiPromptPreview']);
+    }
+
+    public function test_element_catalog_reports_ai_metadata_as_null_and_false_for_a_regular_image(): void
+    {
+        $raw = $this->rawProject([
+            'elements' => [
+                ['id' => 'sig', 'type' => 'image', 'x' => 0, 'y' => 0, 'width' => 30, 'height' => 10, 'properties' => ['path' => '/tmp/sig.png']],
+            ],
+        ]);
+        $project = CertificateProject::fromArray($raw);
+
+        $details = $project->elementCatalog('image')[0]['details'];
+
+        $this->assertFalse($details['aiGenerated']);
+        $this->assertNull($details['aiModel']);
+        $this->assertNull($details['aiGeneratedAt']);
+        $this->assertNull($details['aiPromptPreview']);
+    }
+
     public function test_get_element_ids_is_an_alias_for_element_catalog(): void
     {
         $project = CertificateProject::fromArray($this->rawProject());

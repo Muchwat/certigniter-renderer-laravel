@@ -24,6 +24,15 @@ class DesignElementTest extends TestCase
         $this->assertTrue($shown->isVisible());
     }
 
+    public function test_is_ai_generated_defaults_false_and_is_true_only_when_explicitly_set(): void
+    {
+        $untagged = new DesignElement(id: 'e', type: 'image', x: 0, y: 0, width: 1, height: 1);
+        $tagged = new DesignElement(id: 'e', type: 'image', x: 0, y: 0, width: 1, height: 1, properties: ['aiGenerated' => true]);
+
+        $this->assertFalse($untagged->isAiGenerated());
+        $this->assertTrue($tagged->isAiGenerated());
+    }
+
     public function test_is_text_like_matches_all_three_text_variants(): void
     {
         foreach (['text', 'placeholder_text', 'dynamic_text'] as $type) {

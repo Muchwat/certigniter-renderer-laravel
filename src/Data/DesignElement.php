@@ -69,6 +69,19 @@ class DesignElement
         return $this->property('isVisible', true) !== false;
     }
 
+    /**
+     * True for an image element Certigniter's Design Studio generated with
+     * its AI background tool (`properties.aiGenerated`), as opposed to one
+     * the user uploaded or drew. `aiModel`/`aiPrompt`/`aiGeneratedAt` carry
+     * the accompanying attribution and are read directly via property()
+     * rather than through dedicated accessors, matching this class's pattern
+     * for informational (non-branching) fields.
+     */
+    public function isAiGenerated(): bool
+    {
+        return $this->property('aiGenerated', false) === true;
+    }
+
     public function isGroup(): bool
     {
         return $this->type === 'group';

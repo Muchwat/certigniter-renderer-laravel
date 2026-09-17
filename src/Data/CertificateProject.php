@@ -341,6 +341,12 @@ class CertificateProject
                     : null,
                 'fit' => $element->property('fit', 'contain'),
                 'maskShape' => $element->property('maskShape', 'none'),
+                'aiGenerated' => $element->isAiGenerated(),
+                'aiModel' => $element->property('aiModel'),
+                'aiGeneratedAt' => $element->property('aiGeneratedAt'),
+                'aiPromptPreview' => is_string($element->property('aiPrompt')) && $element->property('aiPrompt') !== ''
+                    ? $this->shortPreview((string) $element->property('aiPrompt'))
+                    : null,
                 'replacementHint' => $this->imageReplacementHint($element),
             ],
             'text', 'placeholder_text', 'dynamic_text' => [
@@ -370,7 +376,10 @@ class CertificateProject
 
     private function imageReplacementHint(DesignElement $element): string
     {
-        if ($element->width >= $this->width * 0.9 && $element->height >= $this->height * 0.9) {
+        // The AI-generated tag is authoritative where present - it survives a
+        // background the user has since resized below the 90% fallback
+        // threshold, which a size-only check would otherwise misclassify.
+        if ($element->isAiGenerated() || ($element->width >= $this->width * 0.9 && $element->height >= $this->height * 0.9)) {
             return 'background';
         }
 

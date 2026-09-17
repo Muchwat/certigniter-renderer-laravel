@@ -188,6 +188,10 @@ not just bare IDs, so a developer can build a useful selection screen:
             'originalFilename' => 'director-signature.png',
             'fit' => 'contain',
             'maskShape' => 'none',
+            'aiGenerated' => false,
+            'aiModel' => null,
+            'aiGeneratedAt' => null,
+            'aiPromptPreview' => null,
             'replacementHint' => 'signature',
         ],
     ],
@@ -195,9 +199,15 @@ not just bare IDs, so a developer can build a useful selection screen:
 ```
 
 The replacement hint is one of `background`, `logo`, `signature`, or `image`.
-The catalog also provides relevant summaries for text, variable text, shapes,
-QR codes, barcodes, and groups. It intentionally excludes embedded base64 font
-and image payloads, making it safe and lightweight to return as JSON.
+`aiGenerated`/`aiModel`/`aiGeneratedAt`/`aiPromptPreview` are set on an image
+Certigniter's Design Studio generated with its AI background tool -
+`aiGenerated` alone is enough to classify it as `background`, even if it's
+since been resized below the 90% area fallback the hint otherwise uses.
+`aiPromptPreview` is the same 80-character truncation `textPreview`/
+`dataPreview` use elsewhere in this catalog. The catalog also provides
+relevant summaries for text, variable text, shapes, QR codes, barcodes, and
+groups. It intentionally excludes embedded base64 font and image payloads,
+making it safe and lightweight to return as JSON.
 
 `parseIgniter()` returns a typed `Data\CertificateProject`; it does not render
 a PDF or mutate the uploaded file.
