@@ -9,8 +9,9 @@ The package can:
 - discover recipient fields before issuing;
 - render individual or bulk certificates;
 - replace foreign logos, signatures, and other images at issue time;
-- assign application-generated QR code values (e.g. unique verification
-  links) at issue time;
+- assign application-generated QR code and barcode values (e.g. unique
+  verification links or codes) at issue time, or bind either to a recipient
+  column;
 - render text, images, shapes, QR codes, barcodes, masks, mirrors, groups, and
   embedded fonts;
 - report non-fatal rendering problems through a warnings API.
@@ -23,7 +24,7 @@ The package can:
 - [Quick start](#quick-start)
 - [Inspecting a template](#inspecting-a-template)
 - [Recipient data](#recipient-data)
-- [Dynamic QR code values](#dynamic-qr-code-values)
+- [Dynamic QR code and barcode values](#dynamic-qr-code-and-barcode-values)
 - [Replacing logos and signatures](#replacing-logos-and-signatures)
 - [Bulk issuance](#bulk-issuance)
 - [Warnings and error handling](#warnings-and-error-handling)
@@ -229,18 +230,20 @@ $pdf = $renderer->renderIgniterToPdf(
 );
 ```
 
-There are two merge mechanisms because that is how Certigniter stores fields:
+Certigniter stores fields in two forms, so there are two merge mechanisms:
 
 | Template element | Stored form | Matching behavior |
 |---|---|---|
 | Variable text | `variableName: "Recipient Name"` | Case-insensitive and trimmed |
-| QR/barcode data | `{{Certificate ID}}` or `<Certificate ID>` | Exact token replacement |
+| "Dynamic value" QR code/barcode | `qrType: "dynamic"`, `variableName: "Certificate ID"` | Case-insensitive and trimmed, replaces the whole value |
+| Other QR/barcode data | `{{Certificate ID}}` or `<Certificate ID>` | Exact (case-sensitive) token replacement; spaces inside the delimiters are ignored |
 
 Use `$project->variableNames()` to obtain the distinct fields required by
 both mechanisms in template order.
 
-When no recipient is supplied, variable text renders empty and QR/barcode
-tokens remain unresolved. That is normally suitable only for structural
+When no recipient is supplied, variable text renders empty, QR/barcode
+tokens remain unresolved, and a "Dynamic value" barcode is skipped with a
+warning. That is normally suitable only for structural
 template previews.
 
 ### Consistent date formatting
@@ -273,18 +276,20 @@ set of patterns (exactly the ones the picker offers) into PHP's `date()`
 syntax; an unrecognized pattern falls back to the default rather than
 guessing at a translation.
 
-## Dynamic QR code values
+## Dynamic QR code and barcode values
 
-A QR element's Design Studio "Content source" (`qrType`) is one of:
+A QR code or barcode element's Design Studio "Content source" (`qrType`)
+is one of:
 
 - **Custom value** (`'custom'`) - a static string, optionally containing
   `{{token}}`/`<token>` placeholders resolved from `recipient` like any
   other QR/barcode data (see above); or
 - **Dynamic value** (`'dynamic'`) - bound to exactly one recipient/CSV
-  column, named in `properties.variableName` and mirrored into `data` as
-  `{{ variableName }}` - resolves through the same `{{token}}`/`<token>`
-  substitution as a custom value, just always naming one column rather than
-  free text (not to be confused with this section's own "dynamic QR code
+  column, named in `properties.variableName` (and mirrored into `data` as
+  `{{ variableName }}` for older consumers) - the whole payload is replaced
+  by that column's value, matched case-insensitively and trimmed like a text
+  element's `variableName`; a recipient with no value for it skips the code
+  with a warning (not to be confused with this section's own "dynamic QR code
   values" - the `qrCodeOverrides` mechanism below - which is a different,
   host-application-driven kind of dynamic content); or
 - **Verification link** (`'verification'` - `'authentication'` is a legacy
@@ -292,20 +297,26 @@ A QR element's Design Studio "Content source" (`qrType`) is one of:
   element intentionally stores no `data` at all. Its real payload doesn't
   exist until the certificate is issued, so it must be supplied by your
   application at render time - typically a unique verification URL such as
-  `https://you.example.com/verify/{id}`. A project has at most one of these
-  (the Design Studio enforces it).
+  `https://you.example.com/verify/{id}`.
 
-Use `$project->authenticationQrElementId()` to find whether (and where)
-a parsed project has one, then pass the value you generated in
-`qrCodeOverrides`, keyed by that element ID:
+**Barcodes support the same three content sources.** A `barcode` element
+carries the same `qrType`/`variableName` properties, so a barcode can encode
+a per-recipient column (`'dynamic'`) or an application-supplied verification
+code (`'verification'`) exactly like a QR code. Pick a symbology that can
+encode the value - Code 128 handles any ASCII verification URL or code;
+EAN/UPC/ITF only accept digits, and a value they reject is skipped with a
+warning.
+
+Use `$project->verificationCodeElementIds()` to find every verification QR
+code and barcode in a parsed project (a template may have e.g. one of each),
+then pass the value you generated in `qrCodeOverrides`, keyed by element ID.
+`authenticationQrElementId()` still returns just the QR one:
 
 ```php
 $project = $renderer->parseIgniter($encrypted);
-$qrElementId = $project->authenticationQrElementId(); // null if the template has none
+$verificationUrl = route('certificate.verify', ['id' => $certificateId]);
 
-$qrCodeOverrides = $qrElementId !== null
-    ? [$qrElementId => route('certificate.verify', ['id' => $certificateId])]
-    : [];
+$qrCodeOverrides = array_fill_keys($project->verificationCodeElementIds(), $verificationUrl);
 
 $pdf = $renderer->renderProjectToPdf(
     $project,
@@ -314,11 +325,11 @@ $pdf = $renderer->renderProjectToPdf(
 );
 ```
 
-`qrCodeOverrides` accepts any qrcode element ID, not only a verification
+`qrCodeOverrides` accepts any qrcode or barcode element ID, not only a verification
 link - an explicit override always wins over both a static `data` value and
 `{{token}}`/`<token>` substitution, so it also works as a direct escape
 hatch for a value your application computed rather than one that came from
-a recipient record. If a verification-link QR code has no override
+a recipient record. If a verification-link code has no override
 supplied for it, it is skipped with a warning (see below) rather than
 encoding an empty or placeholder string into the certificate.
 
@@ -433,9 +444,10 @@ Typical warnings include:
   provided;
 - a QR/barcode token was not resolved;
 - barcode data is invalid for its selected symbology;
-- a "Verification link" QR code had no value supplied for it in
+- a "Verification link" QR code or barcode had no value supplied for it in
   `qrCodeOverrides`;
-- a "Dynamic value" QR code had no data column ever set for it.
+- a "Dynamic value" QR code or barcode had no data column set, or the
+  recipient had no value for that column.
 
 ## Public API
 
@@ -452,7 +464,8 @@ renderIgniterToPdf(
 ```
 
 Convenience entry point that unpacks, parses, merges, overrides images and
-QR code values, and returns PDF bytes. Pass a per-request encryption key only
+QR code/barcode values, and returns PDF bytes. `$qrCodeOverrides` is keyed
+by QR code or barcode element ID. Pass a per-request encryption key only
 when intentionally supporting files from a different trusted key domain.
 
 ### `parseIgniter()`
@@ -538,13 +551,15 @@ $project->variableNames(): array;
 $project->elementCatalog(?string $type = null): array;
 $project->getElementIds(?string $type = null): array;
 $project->authenticationQrElementId(): ?string;
+$project->verificationCodeElementIds(): array;
 ```
 
 `getElementIds()` is an alias of `elementCatalog()` and returns the same rich
 metadata. Use `getElementIds('image')` for a logo/signature replacement UI.
 `authenticationQrElementId()` returns the element ID of the project's
-"Verification link" QR code, or `null` if it has none - see
-[Dynamic QR code values](#dynamic-qr-code-values).
+"Verification link" QR code, or `null` if it has none;
+`verificationCodeElementIds()` returns every verification QR code and
+barcode - see [Dynamic QR code and barcode values](#dynamic-qr-code-and-barcode-values).
 
 ## Rendering compatibility
 
@@ -562,6 +577,7 @@ metadata. Use `getElementIds('image')` for a logo/signature replacement UI.
 | Circle and rounded-rectangle image masks | Yes |
 | Horizontal and vertical element mirroring | Yes |
 | QR codes | Yes |
+| Dynamic and verification-link QR codes and barcodes | Yes |
 | Code39, EAN-13, EAN-8, UPC-A, ITF, Codabar, Code128 | Yes |
 | Group rotation and opacity composition | Yes, configurable |
 | Fonts carried inside the `.igniter` | Yes |
@@ -638,7 +654,11 @@ to PDF points. Also verify the template's font is embedded or included in
 ### A barcode is skipped
 
 Ensure all merge tokens were supplied and the resulting value is valid for
-the selected barcode format. Read `warnings()` for the element ID and cause.
+the selected barcode format. A "Dynamic value" barcode also needs its
+`variableName` column in the recipient data, and a "Verification link"
+barcode needs a value in `qrCodeOverrides`. EAN-13, EAN-8, UPC-A and ITF only
+encode digits; use Code 128 for a verification URL. Read `warnings()` for the
+element ID and cause.
 
 ### A font falls back to DejaVu Sans
 
