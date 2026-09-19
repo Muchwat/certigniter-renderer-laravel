@@ -6,6 +6,15 @@ All notable changes to this package are documented here.
 
 ### Added
 
+- Barcodes now support the same content sources as QR codes: a `barcode`
+  element with `qrType: 'dynamic'` encodes its `variableName` recipient
+  column, and one with `qrType: 'verification'` encodes a value the host
+  application supplies via `qrCodeOverrides` (which now accepts barcode
+  element IDs too). New `DesignElement::isCode()`/`isVerificationCode()`/
+  `isDynamicCode()` cover both types; `isQrAuthenticationLink()`/
+  `isDynamicQr()` stay QR-only. New `CertificateProject::verificationCodeElementIds()`
+  lists every verification QR code and barcode. `elementCatalog()`'s barcode
+  `details` now include `qrType`, `isVerificationCode` and `variableName`.
 - `DesignElement::isAiGenerated()`, and `aiGenerated`/`aiModel`/`aiGeneratedAt`/
   `aiPromptPreview` in `elementCatalog()`'s per-image `details`, surfacing the
   attribution Design Studio's AI background tool now stamps on the image
@@ -14,6 +23,18 @@ All notable changes to this package are documented here.
   `aiGenerated` as authoritative for the `background` classification, ahead of
   the existing 90%-of-page-size fallback - a background the issuer has since
   resized down no longer falls through to `logo`/`signature`/`image`.
+
+### Fixed
+
+- Dynamic QR codes never resolved: both Design Studio editors write the
+  column into `data` as `{{ name }}` (with spaces), which the exact-match
+  token substitution didn't match, so the literal token was encoded.
+  `RecipientMerge` now resolves a dynamic code's `variableName` directly
+  (case-insensitive, trimmed, like text), and `{{token}}`/`<token>`
+  substitution ignores whitespace just inside the delimiters.
+  `variableNames()` no longer reports those tokens with padding spaces.
+- A dynamic code whose column is missing from the recipient is now skipped
+  with a warning instead of encoding the unresolved token.
 
 ## [3.0.0] - 2026-09-15
 

@@ -21,17 +21,23 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
  *    project's own `dateFormat` if the element didn't set one.
  *  - qrcode / barcode `data`: INLINE token substitution - every
  *    `{{ColumnName}}` and `<ColumnName>` occurrence in the string is
- *    replaced, for every column in the record, case-SENSITIVE and
- *    NOT trimmed (the token must match the CSV header exactly, after the
- *    header itself was already whitespace-normalized on parse).
+ *    replaced, for every column in the record, case-SENSITIVE (the token
+ *    must match the CSV header exactly, after the header itself was already
+ *    whitespace-normalized on parse). Whitespace just inside the delimiters
+ *    is ignored, so `{{ ColumnName }}` - the form both Studio editors write -
+ *    resolves the same as `{{ColumnName}}`. A token with no matching column
+ *    is left in place.
  *
- * A qrcode element's `qrType: 'dynamic'` ("Dynamic value" in the Design
- * Studio) is bound to one column via `properties.variableName`, but that
- * property is never read here directly - both Studio editors mirror it into
- * `data` as `{{ variableName }}` on every edit, so it already resolves
- * through the ordinary qrcode/barcode token-substitution path above, the
- * same way a manually-typed `{{token}}` in a `qrType: 'custom'` QR does. See
- * DesignElement::isDynamicQr().
+ * A qrcode OR barcode whose content source is "Dynamic value" (`qrType:
+ * 'dynamic'`, see DesignElement::isDynamicCode()) is bound to one column via
+ * `properties.variableName` and is resolved like a text element's
+ * `variableName` instead: a WHOLE-FIELD replacement, matched
+ * case-insensitively and trimmed - so a barcode can encode e.g. a
+ * per-recipient certificate ID. The `{{ variableName }}` mirror both editors
+ * also write into a dynamic QR's `data` is only used when `variableName`
+ * itself is empty. "Verification link" codes (DesignElement::isVerificationCode())
+ * have no recipient column at all - their payload comes from the renderer's
+ * `qrCodeOverrides`.
  */
 class RecipientMerge
 {
@@ -42,7 +48,7 @@ class RecipientMerge
             return self::applyToText($element, $record, $project);
         }
 
-        if (in_array($element->type, ['qrcode', 'barcode'], true)) {
+        if ($element->isCode()) {
             return self::applyToData($element, $record);
         }
 
@@ -77,8 +83,18 @@ class RecipientMerge
         return DateFormatting::tryFormat($rawValue, $icuPattern) ?? $rawValue;
     }
 
+    /** @param array<string, string> $record */
     private static function applyToData(DesignElement $element, array $record): DesignElement
     {
+        $variableName = $element->property('variableName');
+
+        if ($element->isDynamicCode() && is_string($variableName) && trim($variableName) !== '') {
+            $clone = clone $element;
+            $clone->properties['data'] = self::recordValue($record, [$variableName]);
+
+            return $clone;
+        }
+
         $data = $element->property('data');
 
         if (! is_string($data) || $data === '') {
@@ -113,17 +129,21 @@ class RecipientMerge
     /** @param array<string, string> $record */
     private static function substituteTokens(string $template, array $record): string
     {
-        $output = $template;
+        return (string) preg_replace_callback(
+            '/\{\{([^{}]+)\}\}|<([^<>]+)>/',
+            function (array $match) use ($record): string {
+                $token = ($match[1] ?? '') !== '' ? $match[1] : ($match[2] ?? '');
 
-        foreach ($record as $key => $value) {
-            $output = str_replace(
-                ['{{'.$key.'}}', '<'.$key.'>'],
-                (string) $value,
-                $output,
-            );
-        }
+                foreach ([$token, trim($token)] as $key) {
+                    if (array_key_exists($key, $record)) {
+                        return (string) $record[$key];
+                    }
+                }
 
-        return $output;
+                return $match[0];
+            },
+            $template,
+        );
     }
 
     private static function fold(string $value): string

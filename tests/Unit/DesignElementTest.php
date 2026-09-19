@@ -71,6 +71,24 @@ class DesignElementTest extends TestCase
         $this->assertFalse($barcodeWithSameProperty->isDynamicQr());
     }
 
+    public function test_verification_and_dynamic_content_sources_apply_to_barcodes_too(): void
+    {
+        $make = fn (string $type, string $qrType) => new DesignElement(id: 'e', type: $type, x: 0, y: 0, width: 1, height: 1, properties: ['qrType' => $qrType]);
+
+        $this->assertTrue($make('barcode', 'verification')->isVerificationCode());
+        $this->assertTrue($make('barcode', 'authentication')->isVerificationCode());
+        $this->assertTrue($make('qrcode', 'verification')->isVerificationCode());
+        $this->assertFalse($make('barcode', 'custom')->isVerificationCode());
+        $this->assertFalse($make('text', 'verification')->isVerificationCode());
+
+        $this->assertTrue($make('barcode', 'dynamic')->isDynamicCode());
+        $this->assertTrue($make('qrcode', 'dynamic')->isDynamicCode());
+        $this->assertFalse($make('barcode', 'verification')->isDynamicCode());
+        $this->assertFalse($make('image', 'dynamic')->isDynamicCode());
+
+        $this->assertFalse((new DesignElement(id: 'e', type: 'barcode', x: 0, y: 0, width: 1, height: 1))->isVerificationCode(), 'a barcode with no qrType is static');
+    }
+
     public function test_content_alignment_defaults_to_text_align_for_text_like_elements_without_a_saved_alignment(): void
     {
         $left = new DesignElement(id: 'e', type: 'text', x: 0, y: 0, width: 1, height: 1, properties: ['textAlign' => 'left']);

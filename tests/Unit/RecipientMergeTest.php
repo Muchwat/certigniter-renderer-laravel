@@ -101,6 +101,54 @@ class RecipientMergeTest extends TestCase
         $this->assertSame('{{certificate id}}', $merged->property('data'), 'differently-cased token must not match');
     }
 
+    public function test_token_substitution_ignores_whitespace_inside_the_delimiters(): void
+    {
+        $qr = new DesignElement(
+            id: 'qr', type: 'qrcode', x: 0, y: 0, width: 10, height: 10,
+            properties: ['data' => 'https://verify/{{ Certificate ID }}?u=< Recipient Name >'],
+        );
+
+        $merged = RecipientMerge::apply($qr, ['Certificate ID' => 'CERT-1', 'Recipient Name' => 'Ada']);
+
+        $this->assertSame('https://verify/CERT-1?u=Ada', $merged->property('data'));
+    }
+
+    public function test_a_dynamic_barcode_resolves_its_variable_name_as_a_whole_field(): void
+    {
+        $barcode = new DesignElement(
+            id: 'bc', type: 'barcode', x: 0, y: 0, width: 10, height: 10,
+            properties: ['qrType' => 'dynamic', 'variableName' => 'Certificate ID', 'data' => 'ignored'],
+        );
+
+        $merged = RecipientMerge::apply($barcode, [' certificate id ' => 'CERT-42']);
+
+        $this->assertSame('CERT-42', $merged->property('data'));
+    }
+
+    public function test_a_dynamic_qr_resolves_its_variable_name_rather_than_the_mirrored_token(): void
+    {
+        $qr = new DesignElement(
+            id: 'qr', type: 'qrcode', x: 0, y: 0, width: 10, height: 10,
+            properties: ['qrType' => 'dynamic', 'variableName' => 'certificate_id', 'data' => '{{ certificate_id }}'],
+        );
+
+        $merged = RecipientMerge::apply($qr, ['Certificate_ID' => 'CERT-7']);
+
+        $this->assertSame('CERT-7', $merged->property('data'));
+    }
+
+    public function test_a_dynamic_code_with_no_matching_column_resolves_to_empty_string(): void
+    {
+        $barcode = new DesignElement(
+            id: 'bc', type: 'barcode', x: 0, y: 0, width: 10, height: 10,
+            properties: ['qrType' => 'dynamic', 'variableName' => 'Certificate ID'],
+        );
+
+        $merged = RecipientMerge::apply($barcode, ['Recipient Name' => 'Ada']);
+
+        $this->assertSame('', $merged->property('data'));
+    }
+
     public function test_group_and_other_types_pass_through_untouched(): void
     {
         $group = new DesignElement(id: 'g', type: 'group', x: 0, y: 0, width: 10, height: 10);

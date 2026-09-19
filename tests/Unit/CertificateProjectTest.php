@@ -117,6 +117,36 @@ class CertificateProjectTest extends TestCase
         $this->assertSame(['Recipient Name', 'Certificate ID'], $project->variableNames());
     }
 
+    public function test_variable_names_uses_a_dynamic_codes_column_and_skips_verification_codes(): void
+    {
+        $raw = $this->rawProject([
+            'elements' => [
+                ['id' => 'bc', 'type' => 'barcode', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['qrType' => 'dynamic', 'variableName' => 'Certificate ID']],
+                ['id' => 'qr', 'type' => 'qrcode', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['qrType' => 'dynamic', 'variableName' => 'Serial', 'data' => '{{ Serial }}']],
+                ['id' => 'vbc', 'type' => 'barcode', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['qrType' => 'verification', 'data' => '']],
+                ['id' => 'sqr', 'type' => 'qrcode', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['data' => 'https://verify/{{ Code }}']],
+            ],
+        ]);
+        $project = CertificateProject::fromArray($raw);
+
+        $this->assertSame(['Certificate ID', 'Serial', 'Code'], $project->variableNames());
+    }
+
+    public function test_verification_code_element_ids_finds_verification_qr_codes_and_barcodes(): void
+    {
+        $raw = $this->rawProject([
+            'elements' => [
+                ['id' => 'qr', 'type' => 'qrcode', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['qrType' => 'verification']],
+                ['id' => 'static', 'type' => 'barcode', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['data' => '123']],
+                ['id' => 'bc', 'type' => 'barcode', 'x' => 0, 'y' => 0, 'width' => 1, 'height' => 1, 'properties' => ['qrType' => 'verification']],
+            ],
+        ]);
+        $project = CertificateProject::fromArray($raw);
+
+        $this->assertSame(['qr', 'bc'], $project->verificationCodeElementIds());
+        $this->assertSame('qr', $project->authenticationQrElementId(), 'the QR-only lookup is unchanged');
+    }
+
     public function test_authentication_qr_element_id_finds_the_single_authentication_link_qr(): void
     {
         $raw = $this->rawProject([

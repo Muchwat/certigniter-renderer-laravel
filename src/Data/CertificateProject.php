@@ -361,9 +361,14 @@ class CertificateProject
             'qrcode' => [
                 'qrType' => $element->property('qrType', 'custom'),
                 'isAuthenticationLink' => $element->isQrAuthenticationLink(),
+                'isVerificationCode' => $element->isVerificationCode(),
+                'variableName' => $element->isDynamicCode() ? $element->property('variableName') : null,
                 'dataPreview' => $this->shortPreview((string) $element->property('data', '')),
             ],
             'barcode' => [
+                'qrType' => $element->property('qrType', 'custom'),
+                'isVerificationCode' => $element->isVerificationCode(),
+                'variableName' => $element->isDynamicCode() ? $element->property('variableName') : null,
                 'dataPreview' => $this->shortPreview((string) $element->property('data', '')),
                 'barcodeType' => $element->property('barcodeType', 'code128'),
             ],
@@ -414,8 +419,11 @@ class CertificateProject
      * Every recipient-record column this project actually needs to fully
      * resolve - i.e. what a caller's CSV/form needs a column for. Combines
      * both of RecipientMerge's mechanisms: `variableName` on text-like
-     * elements (whole-field replacement) and `{{token}}`/`<token>` found
-     * inside qrcode/barcode `data` strings (inline substitution).
+     * elements and "Dynamic value" qrcode/barcode elements (whole-field
+     * replacement), and `{{token}}`/`<token>` found inside other
+     * qrcode/barcode `data` strings (inline substitution). "Verification
+     * link" codes contribute nothing - their value comes from
+     * `qrCodeOverrides`, not a recipient column.
      *
      * @return string[] distinct names, in first-seen order
      */
@@ -434,14 +442,24 @@ class CertificateProject
                 continue;
             }
 
-            if (in_array($element->type, ['qrcode', 'barcode'], true)) {
-                $data = (string) $element->property('data', '');
+            if (! $element->isCode() || $element->isVerificationCode()) {
+                continue;
+            }
 
-                if ($data !== '' && preg_match_all('/\{\{([^{}]+)\}\}|<([^<>]+)>/', $data, $matches)) {
-                    foreach ([...$matches[1], ...$matches[2]] as $token) {
-                        if ($token !== '') {
-                            $names[$token] = true;
-                        }
+            $variableName = trim((string) $element->property('variableName', ''));
+
+            if ($element->isDynamicCode() && $variableName !== '') {
+                $names[$variableName] = true;
+
+                continue;
+            }
+
+            $data = (string) $element->property('data', '');
+
+            if ($data !== '' && preg_match_all('/\{\{([^{}]+)\}\}|<([^<>]+)>/', $data, $matches)) {
+                foreach ([...$matches[1], ...$matches[2]] as $token) {
+                    if (trim($token) !== '') {
+                        $names[trim($token)] = true;
                     }
                 }
             }
@@ -466,5 +484,27 @@ class CertificateProject
         }
 
         return null;
+    }
+
+    /**
+     * Element IDs of every "Verification link" QR code AND barcode in this
+     * project, in canvas order. A project can carry one of each (e.g. a QR
+     * encoding the verification URL beside a barcode encoding the same
+     * code), so a host application should key the same per-recipient value
+     * into `$qrCodeOverrides` for every ID returned here.
+     *
+     * @return string[]
+     */
+    public function verificationCodeElementIds(): array
+    {
+        $ids = [];
+
+        foreach ($this->elements as $element) {
+            if ($element->isVerificationCode()) {
+                $ids[] = $element->id;
+            }
+        }
+
+        return $ids;
     }
 }

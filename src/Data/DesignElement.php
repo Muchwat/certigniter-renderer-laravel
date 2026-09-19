@@ -105,23 +105,50 @@ class DesignElement
      */
     public function isQrAuthenticationLink(): bool
     {
-        return $this->type === 'qrcode' && in_array($this->property('qrType', 'custom'), ['verification', 'authentication'], true);
+        return $this->type === 'qrcode' && $this->isVerificationCode();
+    }
+
+    /** True for a qrcode or barcode element - the two types whose `data` is encoded rather than drawn. */
+    public function isCode(): bool
+    {
+        return in_array($this->type, ['qrcode', 'barcode'], true);
+    }
+
+    /**
+     * True for a QR code OR barcode whose content source is "Verification
+     * link". Barcodes carry the same `qrType`/`variableName` content-source
+     * properties as QR codes (the web Studio's canvasCodeData() already reads
+     * them identically for both), so a barcode can encode a per-recipient
+     * verification code the host application supplies via `qrCodeOverrides`
+     * exactly like a QR code can.
+     */
+    public function isVerificationCode(): bool
+    {
+        return $this->isCode() && in_array($this->property('qrType', 'custom'), ['verification', 'authentication'], true);
+    }
+
+    /**
+     * True for a QR code OR barcode whose content source is "Dynamic value",
+     * bound to one recipient column via `properties.variableName` - see
+     * RecipientMerge for how that column is resolved.
+     */
+    public function isDynamicCode(): bool
+    {
+        return $this->isCode() && $this->property('qrType', 'custom') === 'dynamic';
     }
 
     /**
      * True for a QR code whose Design Studio "Content source" is set to
      * "Dynamic value" - bound to exactly one recipient/CSV column named in
      * `properties.variableName`. Both Design Studio editors also mirror that
-     * column name into `data` as `{{ variableName }}` for backward
-     * compatibility, so RecipientMerge's existing case-sensitive
-     * `{{token}}`/`<token>` substitution on `data` already resolves it
-     * correctly without reading `variableName` directly - this accessor
-     * exists purely so renderer code can recognize/report on the type
-     * explicitly, the same way it already does for `isQrAuthenticationLink()`.
+     * column name into `data` as `{{ variableName }}` for consumers that
+     * don't recognize `qrType: 'dynamic'`; RecipientMerge resolves
+     * `variableName` directly (see isDynamicCode()) and only falls back to
+     * that mirrored token when it is empty.
      */
     public function isDynamicQr(): bool
     {
-        return $this->type === 'qrcode' && $this->property('qrType', 'custom') === 'dynamic';
+        return $this->type === 'qrcode' && $this->isDynamicCode();
     }
 
     /**
