@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
 use Certigniter\CertificateRenderer\Support\Encryption;
@@ -30,6 +32,7 @@ class IgniterPackageTest extends TestCase
      *
      * @param  array<string, mixed>  $project
      * @param  array<string, string>  $assets  archive path => raw bytes
+     * @param  array<string, mixed>|null  $manifestOverride
      */
     private function package(array $project, array $assets = [], ?array $manifestOverride = null): string
     {
@@ -44,7 +47,7 @@ class IgniterPackageTest extends TestCase
         // manifest, so page dimensions stay floats rather than collapsing
         // to ints on the way through the fixture.
         $zip->addFromString('manifest.json', Encryption::encrypt(
-            json_encode($manifest, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES),
+            (string) json_encode($manifest, JSON_PRESERVE_ZERO_FRACTION | JSON_UNESCAPED_SLASHES),
             self::KEY,
         ));
         foreach ($assets as $archivePath => $bytes) {
@@ -52,9 +55,13 @@ class IgniterPackageTest extends TestCase
         }
         $this->assertTrue($zip->close());
 
-        return file_get_contents($path);
+        return (string) file_get_contents($path);
     }
 
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
     private function minimalProject(array $overrides = []): array
     {
         return array_merge([
@@ -144,19 +151,60 @@ class IgniterPackageTest extends TestCase
         $this->assertSame('', $project['elements'][1]['properties']['imageData']);
     }
 
-    /** A bare encrypted JSON blob is not a .igniter - only the ZIP container is. */
+    /**
+     * A bare encrypted JSON blob is not a .igniter - only the ZIP container
+     * is. It is also the pre-3.0 form of the format, so the rejection says
+     * so and says what to do about it rather than just "not a ZIP".
+     */
+    public function test_decode_rejects_a_pre_3_0_file_and_says_to_re_export_it(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('pre-3.0 .igniter file');
+
+        IgniterPackage::decode(Encryption::encrypt('{"id":"x"}', self::KEY), self::KEY);
+    }
+
+    /**
+     * A real pre-3.0 file is megabytes of inline base64, so the envelope
+     * cannot be recognized by decoding a truncated prefix of it - only the
+     * opening key is in reach.
+     */
+    public function test_decode_recognizes_a_pre_3_0_file_however_large_it_is(): void
+    {
+        $bulky = Encryption::encrypt(
+            (string) json_encode(['imageData' => base64_encode(random_bytes(256 * 1024))]),
+            self::KEY,
+        );
+
+        $this->assertGreaterThan(300 * 1024, strlen($bulky));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('pre-3.0 .igniter file');
+
+        IgniterPackage::decode($bulky, self::KEY);
+    }
+
     public function test_decode_rejects_a_file_that_is_not_a_zip(): void
     {
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('expected a ZIP container');
+        $this->expectExceptionMessage('This is not a .igniter file');
 
-        IgniterPackage::decode(Encryption::encrypt('{"id":"x"}', self::KEY), self::KEY);
+        IgniterPackage::decode(random_bytes(64), self::KEY);
+    }
+
+    /** An HTML error page saved with a .igniter extension is a real support ticket, not a hypothetical. */
+    public function test_decode_rejects_a_saved_web_page_and_names_what_it_actually_got(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('looks like text or a web page');
+
+        IgniterPackage::decode("<!DOCTYPE html>\n<html><body>504 Gateway Timeout</body></html>", self::KEY);
     }
 
     public function test_decode_rejects_an_empty_file(): void
     {
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('expected a ZIP container');
+        $this->expectExceptionMessage('is empty - the upload did not complete');
 
         IgniterPackage::decode('', self::KEY);
     }
@@ -173,7 +221,7 @@ class IgniterPackageTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('no manifest.json');
 
-        IgniterPackage::decode(file_get_contents($path), self::KEY);
+        IgniterPackage::decode((string) file_get_contents($path), self::KEY);
     }
 
     public function test_decode_rejects_an_unsupported_manifest_version(): void
@@ -181,7 +229,7 @@ class IgniterPackageTest extends TestCase
         $contents = $this->package([], [], ['format' => 'igniter', 'version' => 2, 'project' => $this->minimalProject()]);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Unsupported .igniter package version');
+        $this->expectExceptionMessage('written by a newer Certigniter Design Studio');
 
         IgniterPackage::decode($contents, self::KEY);
     }
@@ -191,7 +239,7 @@ class IgniterPackageTest extends TestCase
         $contents = $this->package([], [], ['format' => 'igniter', 'version' => 1]);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('does not contain a project');
+        $this->expectExceptionMessage('carries no certificate design');
 
         IgniterPackage::decode($contents, self::KEY);
     }
@@ -213,7 +261,7 @@ class IgniterPackageTest extends TestCase
         ]]]));
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Missing or unsafe asset reference');
+        $this->expectExceptionMessage('that is missing from the archive');
 
         IgniterPackage::decode($contents, self::KEY);
     }
@@ -227,7 +275,7 @@ class IgniterPackageTest extends TestCase
         ]]]));
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Missing or unsafe asset reference');
+        $this->expectExceptionMessage('that is missing from the archive');
 
         IgniterPackage::decode($contents, self::KEY);
     }
@@ -237,7 +285,7 @@ class IgniterPackageTest extends TestCase
         $contents = $this->package($this->minimalProject(), ['../escape.txt' => 'nope']);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Unsafe or duplicate path');
+        $this->expectExceptionMessage('unexpected or duplicated member');
 
         IgniterPackage::decode($contents, self::KEY);
     }
@@ -259,13 +307,13 @@ class IgniterPackageTest extends TestCase
                 'type' => 'image',
                 'properties' => ['imageData' => ['asset_path' => $path]],
             ]]]),
-        ], JSON_PRESERVE_ZERO_FRACTION), self::KEY));
+        ], JSON_PRESERVE_ZERO_FRACTION) ?: '', self::KEY));
         $zip->addEmptyDir('assets');
         $zip->addEmptyDir('assets/images');
         $zip->addFromString($path, $bytes);
         $zip->close();
 
-        $project = IgniterPackage::decode(file_get_contents($zipPath), self::KEY);
+        $project = IgniterPackage::decode((string) file_get_contents($zipPath), self::KEY);
 
         $this->assertSame(base64_encode($bytes), $project['elements'][0]['properties']['imageData']);
     }
@@ -273,7 +321,7 @@ class IgniterPackageTest extends TestCase
     public function test_decode_rejects_a_file_larger_than_the_supported_size(): void
     {
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('exceeds the supported size');
+        $this->expectExceptionMessage('this package will open');
 
         IgniterPackage::decode(IgniterPackage::MAGIC.str_repeat('x', IgniterPackage::MAX_FILE_BYTES), self::KEY);
     }

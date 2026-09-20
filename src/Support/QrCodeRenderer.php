@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Support;
 
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
+use Stringable;
 
 /**
  * Certigniter's `errorCorrectionLevel` is stored as the Dart `qr` package's
@@ -16,6 +19,10 @@ class QrCodeRenderer
 {
     private const ERROR_CORRECTION_LEVELS = ['L', 'M', 'Q', 'H'];
 
+    /**
+     * @param  array{r: int, g: int, b: int}  $foreground
+     * @param  array{r: int, g: int, b: int}  $background
+     */
     public static function svgDataUri(
         string $data,
         int $sizePx,
@@ -25,6 +32,9 @@ class QrCodeRenderer
     ): string {
         $level = self::ERROR_CORRECTION_LEVELS[$errorCorrectionLevel] ?? 'L';
 
+        // generate() is declared as returning an HtmlString-alike, a
+        // string, or null - it only ever returns markup here, but say so
+        // rather than casting something that might be an object.
         $svg = QrCode::format('svg')
             ->size(max(50, min(1000, $sizePx)))
             ->margin(0)
@@ -33,6 +43,6 @@ class QrCodeRenderer
             ->backgroundColor($background['r'], $background['g'], $background['b'])
             ->generate($data);
 
-        return 'data:image/svg+xml;base64,'.base64_encode((string) $svg);
+        return 'data:image/svg+xml;base64,'.base64_encode($svg instanceof Stringable || is_string($svg) ? (string) $svg : '');
     }
 }

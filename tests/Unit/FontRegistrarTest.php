@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
 use Certigniter\CertificateRenderer\Support\FontRegistrar;
@@ -25,6 +27,7 @@ class FontRegistrarTest extends TestCase
         parent::tearDown();
     }
 
+    /** @param array<string, array{normal?: string, bold?: string}> $embeddedFonts */
     private function registrar(array $embeddedFonts = []): FontRegistrar
     {
         return new FontRegistrar($embeddedFonts, $this->cachePath);
@@ -97,7 +100,7 @@ class FontRegistrarTest extends TestCase
 
         $registrar->registerAll($this->dompdf());
 
-        $cachedFiles = glob($this->cachePath.'/source-*.ttf');
+        $cachedFiles = glob($this->cachePath.'/source-*.ttf') ?: [];
         $this->assertNotEmpty($cachedFiles, 'expected an embedded font to be decoded to a cache file');
         $this->assertSame($fontBytes, file_get_contents($cachedFiles[0]));
     }

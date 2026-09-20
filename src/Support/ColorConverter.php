@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Support;
 
 /**
@@ -32,9 +34,9 @@ class ColorConverter
 
         if (strlen($digits) === 6) {
             return [
-                'r' => hexdec(substr($digits, 0, 2)),
-                'g' => hexdec(substr($digits, 2, 2)),
-                'b' => hexdec(substr($digits, 4, 2)),
+                'r' => self::byte($digits, 0),
+                'g' => self::byte($digits, 2),
+                'b' => self::byte($digits, 4),
                 'a' => 1.0,
             ];
         }
@@ -43,20 +45,26 @@ class ColorConverter
         if ($colorFormat === 'css-hex') {
             // RRGGBBAA
             return [
-                'r' => hexdec(substr($digits, 0, 2)),
-                'g' => hexdec(substr($digits, 2, 2)),
-                'b' => hexdec(substr($digits, 4, 2)),
-                'a' => round(hexdec(substr($digits, 6, 2)) / 255, 4),
+                'r' => self::byte($digits, 0),
+                'g' => self::byte($digits, 2),
+                'b' => self::byte($digits, 4),
+                'a' => round(self::byte($digits, 6) / 255, 4),
             ];
         }
 
         // AARRGGBB (Flutter native / legacy files)
         return [
-            'r' => hexdec(substr($digits, 2, 2)),
-            'g' => hexdec(substr($digits, 4, 2)),
-            'b' => hexdec(substr($digits, 6, 2)),
-            'a' => round(hexdec(substr($digits, 0, 2)) / 255, 4),
+            'r' => self::byte($digits, 2),
+            'g' => self::byte($digits, 4),
+            'b' => self::byte($digits, 6),
+            'a' => round(self::byte($digits, 0) / 255, 4),
         ];
+    }
+
+    /** One hex byte of a normalized digit string, as the 0-255 int every caller wants. */
+    private static function byte(string $digits, int $offset): int
+    {
+        return (int) hexdec(substr($digits, $offset, 2));
     }
 
     /** CSS-ready color string - `#rrggbb` when fully opaque (keeps generated HTML readable), `rgba(...)` otherwise. */

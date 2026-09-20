@@ -36,8 +36,9 @@ The package can:
 
 ## Requirements
 
-- PHP 8.2 or newer
-- Laravel 11 or 12
+- PHP 8.2 or newer (8.3+ on Laravel 13)
+- Laravel 12 or 13 - both are covered by CI on every push, across the
+  lowest and highest dependency set each constraint allows
 - The `zip` PHP extension (`ext-zip`) - a `.igniter` file is a ZIP container
 - A writable system temporary directory for Dompdf's font cache
 - The PHP extensions required by Dompdf, Simple QR Code, and the selected
@@ -675,34 +676,45 @@ needs re-exporting from Certigniter.
 
 ## Testing
 
-This package ships its own standalone PHPUnit suite (`tests/Unit`) for every
-class that works without a booted Laravel application - `ColorConverter`,
-`RecipientMerge`, `Encryption`, `GroupComposer`, `ShapeRenderer`,
-`CertificateProject`, `DesignElement`, `FontRegistrar`, and `BarcodeRenderer`.
-It runs standalone after `composer install`, with no Laravel app required -
-this is what a `composer require` install outside the Certigniter monorepo
-gets to verify its install:
+Two suites, both run by CI on every push across Laravel 12 and 13:
 
 ```bash
-vendor/bin/phpunit
+composer test               # both suites
+composer test:unit          # tests/Unit
+composer test:integration   # tests/Integration
+composer analyse            # PHPStan, level 8
 ```
 
-`CertificateRenderer`, `CertificateRendererServiceProvider`, and
-`QrCodeRenderer` need a real Laravel container (view resolution, the
-simple-qrcode facade binding) and are exercised instead by this repository's
-own Laravel host app, via a Pest integration suite with a real encrypted
-fixture and tests for single rendering, bulk rendering, image overrides,
-typography, shapes, masks, mirrors, fonts, QR codes, and barcodes:
+**`tests/Unit`** covers every class that works without a booted Laravel
+application - parsing, decryption, geometry, colors, merging. It runs
+standalone after `composer install`, which is what a `composer require`
+install outside the Certigniter monorepo gets to verify its install.
+
+**`tests/Integration`** boots a real Laravel application with
+[Testbench][testbench], which discovers this package's service provider
+through the same `extra.laravel` metadata a host app's package discovery
+uses. It covers what only exists inside a framework - config merging and
+publishing, the container binding and facade, the `certigniter::` view
+namespace, and the facade root `QrCodeRenderer` needs - and renders
+`.igniter` fixtures all the way to real PDF bytes, asserting on what landed
+on the page: the text that was drawn, the page box, whether the project's
+own font travelled into the file.
+
+Fixtures are built in memory by `tests/Fixtures/IgniterFixture`, not
+committed as binaries, so a test reads as the project it is about and the
+suite exercises the *current* container format rather than a snapshot of it
+that nobody re-exports.
+
+The host Laravel app in this repository keeps its own Pest suite against a
+real encrypted fixture, covering the app's upload and controller logic on
+top of the package:
 
 ```bash
 php artisan test tests/Feature/Certigniter
-```
-
-Run the host endpoint tests as well when changing upload or controller logic:
-
-```bash
 php artisan test tests/Feature/CertificateControllerTest.php
 ```
+
+[testbench]: https://packages.tools/testbench/
 
 ## License
 

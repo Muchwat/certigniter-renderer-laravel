@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Support;
 
 use RuntimeException;
@@ -55,9 +57,15 @@ class Encryption
             throw new RuntimeException('Encryption failed.');
         }
 
-        return json_encode([
+        $envelope = json_encode([
             'iv' => base64_encode($iv),
             'value' => base64_encode($ciphertext),
         ]);
+
+        if ($envelope === false) {
+            throw new RuntimeException('Could not encode the encrypted .igniter manifest envelope as JSON.');
+        }
+
+        return $envelope;
     }
 }

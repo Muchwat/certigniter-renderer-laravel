@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Data;
 
 /**
@@ -11,6 +13,10 @@ namespace Certigniter\CertificateRenderer\Data;
  */
 class DesignElement
 {
+    /**
+     * @param  array<string, mixed>  $properties
+     * @param  string[]|null  $childrenIds
+     */
     public function __construct(
         public string $id,
         public string $type,
@@ -22,6 +28,7 @@ class DesignElement
         public ?array $childrenIds = null,
     ) {}
 
+    /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
         return new self(

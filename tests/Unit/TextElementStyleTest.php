@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
 use Certigniter\CertificateRenderer\CertificateRenderer;
@@ -16,11 +18,16 @@ class TextElementStyleTest extends TestCase
         return new FontRegistrar;
     }
 
+    /** @param array<string, mixed> $properties */
     private function element(array $properties): DesignElement
     {
         return new DesignElement(id: 'e', type: 'text', x: 0, y: 0, width: 100, height: 20, properties: $properties);
     }
 
+    /**
+     * @param  array<string, mixed>  $properties
+     * @return array<string, mixed>
+     */
     private function describe(array $properties): array
     {
         return TextElementStyle::describe($this->element($properties), 'css-hex', 'mm', $this->fonts());
@@ -93,6 +100,7 @@ class TextElementStyleTest extends TestCase
         $this->assertSame('#000000', $style['color']);
     }
 
+    /** @return array<string, array{string, string}> */
     public static function contentPositionProvider(): array
     {
         return [

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
 use Certigniter\CertificateRenderer\Support\Encryption;
@@ -12,7 +14,7 @@ class EncryptionTest extends TestCase
 
     public function test_encrypt_then_decrypt_round_trips(): void
     {
-        $plaintext = json_encode(['title' => 'Round trip test']);
+        $plaintext = (string) json_encode(['title' => 'Round trip test']);
 
         $envelope = Encryption::encrypt($plaintext, self::KEY);
 

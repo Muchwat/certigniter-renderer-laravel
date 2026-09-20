@@ -1,0 +1,15 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 8
+    paths:
+        - src
+        - tests
+
+    # This package parses files a host application's own users upload, so
+    # the runtime guards on untrusted input are deliberate and stay -
+    # PHPStan is a second layer over them, not a replacement for them, and
+    # that is why `treatPhpDocTypesAsCertain` is off: a docblock saying a
+    # value is an array is not proof that it is one at runtime.
+    treatPhpDocTypesAsCertain: false

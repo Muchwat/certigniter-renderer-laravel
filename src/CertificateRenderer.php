@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer;
 
 use Certigniter\CertificateRenderer\Data\CertificateProject;
@@ -242,7 +244,10 @@ class CertificateRenderer
         $dompdf = new Dompdf($options);
         $fonts->registerAll($dompdf);
 
-        $html = view('certigniter::certificate', [
+        /** @var view-string $view */
+        $view = 'certigniter::certificate';
+
+        $html = view($view, [
             'project' => $project,
             'elements' => $elements,
             'fonts' => $fonts,
@@ -332,7 +337,10 @@ class CertificateRenderer
         return $this->warnings;
     }
 
-    /** @param DesignElement[] $elements @return array<string, array{src: string, aspectRatio: ?float}> */
+    /**
+     * @param  DesignElement[]  $elements
+     * @return array<string, array{src: string, aspectRatio: ?float}>
+     */
     private function resolveImageSources(array $elements): array
     {
         $sources = [];

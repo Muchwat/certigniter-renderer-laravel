@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
 use Certigniter\CertificateRenderer\Support\DateFormatting;

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Support;
 
 use Certigniter\CertificateRenderer\Data\DesignElement;

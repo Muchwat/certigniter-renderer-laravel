@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
 use Certigniter\CertificateRenderer\Data\DesignElement;
@@ -8,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 
 class ImageElementLayoutTest extends TestCase
 {
+    /** @param array<string, mixed> $properties */
     private function element(float $width, float $height, array $properties = []): DesignElement
     {
         return new DesignElement(id: 'e', type: 'image', x: 0, y: 0, width: $width, height: $height, properties: $properties);

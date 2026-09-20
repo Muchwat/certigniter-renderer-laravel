@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
 use Certigniter\CertificateRenderer\Data\CertificateProject;
@@ -7,6 +9,10 @@ use PHPUnit\Framework\TestCase;
 
 class CertificateProjectTest extends TestCase
 {
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
     private function rawProject(array $overrides = []): array
     {
         // A plain top-level merge (not array_replace_recursive) so an

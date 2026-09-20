@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
 use Certigniter\CertificateRenderer\Data\DesignElement;
@@ -118,6 +120,7 @@ class DesignElementTest extends TestCase
         $this->assertSame([1.0, 1.0], $element->contentAlignmentFactors());
     }
 
+    /** @return array<string, array{string, array{float, float}}> */
     public static function alignmentFactorProvider(): array
     {
         return [
@@ -133,6 +136,7 @@ class DesignElementTest extends TestCase
         ];
     }
 
+    /** @param array{float, float} $expected */
     #[DataProvider('alignmentFactorProvider')]
     public function test_every_content_alignment_maps_to_its_box_factors(string $alignment, array $expected): void
     {

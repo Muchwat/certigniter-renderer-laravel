@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Data;
 
 /**
@@ -25,6 +27,7 @@ class CertificateProject
         public string $dateFormat = 'MMM d, yyyy',
     ) {}
 
+    /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
         $size = is_array($data['size'] ?? null) ? $data['size'] : [];
@@ -90,6 +93,7 @@ class CertificateProject
      * ever has to deal with a flat element list.
      *
      * @param  DesignElement[]  $elements
+     * @param  array<string, mixed>  $data
      * @return DesignElement[]
      */
     private static function withMigratedBackground(array $elements, array $data, float $width, float $height): array
@@ -121,6 +125,7 @@ class CertificateProject
         return [$backgroundElement, ...$elements];
     }
 
+    /** @return DesignElement[] */
     public function children(DesignElement $group): array
     {
         if (! $group->childrenIds) {
@@ -197,6 +202,8 @@ class CertificateProject
      * ID represents. Pass a type such as `image` to filter the result.
      *
      * @see self::elementCatalog()
+     *
+     * @return array<int, array<string, mixed>>
      */
     public function getElementIds(?string $type = null): array
     {

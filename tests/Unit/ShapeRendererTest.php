@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
 use Certigniter\CertificateRenderer\Data\DesignElement;
@@ -15,6 +17,7 @@ class ShapeRendererTest extends TestCase
         return base64_decode(substr($rendered['src'], strlen('data:image/svg+xml;base64,')));
     }
 
+    /** @param array<string, mixed> $properties */
     private function rect(array $properties): DesignElement
     {
         return new DesignElement(id: 's', type: 'shape', x: 0, y: 0, width: 40, height: 20, properties: $properties);

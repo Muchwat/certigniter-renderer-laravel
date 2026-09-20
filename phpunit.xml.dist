@@ -4,37 +4,38 @@
          bootstrap="vendor/autoload.php"
          colors="true"
          cacheDirectory=".phpunit.cache"
+         failOnWarning="true"
+         failOnRisky="true"
 >
-    <!--
-        This suite covers only the classes that work standalone, without a
-        booted Laravel application (no view()/config()/container calls) -
-        ColorConverter, RecipientMerge, Encryption, GroupComposer,
-        ShapeRenderer, CertificateProject, DesignElement, FontRegistrar,
-        BarcodeRenderer. It exists so `composer require` + `vendor/bin/phpunit`
-        verifies real behavior for anyone installing this package outside the
-        certigniter monorepo, where phpunit/phpunit was previously a declared
-        but unused dev dependency.
-
-        CertificateRenderer, CertificateRendererServiceProvider, and
-        QrCodeRenderer need a real Laravel container (view resolution, the
-        simple-qrcode facade binding) and are exercised instead by the
-        integration suite in the consuming Laravel app - see this package's
-        README "Testing" section.
-    -->
     <testsuites>
+        <!--
+            Unit: the classes that work standalone, with no booted Laravel
+            application - parsing, decryption, geometry, colors, merging.
+            Fast, and the bulk of the suite.
+        -->
         <testsuite name="Unit">
             <directory>tests/Unit</directory>
+        </testsuite>
+
+        <!--
+            Integration: a real Laravel application, booted by Testbench,
+            which discovers this package's service provider the same way a
+            host app does. It covers the parts that only exist inside a
+            framework - config merging and publishing, the container
+            binding and facade, the `certigniter::` view namespace, and
+            QrCodeRenderer's facade root - and renders `.igniter` fixtures
+            all the way to real PDF bytes, asserting on what landed on the
+            page. This is what makes support for a new major Laravel
+            version something the repo asserts rather than something
+            somebody once checked by hand.
+        -->
+        <testsuite name="Integration">
+            <directory>tests/Integration</directory>
         </testsuite>
     </testsuites>
     <source>
         <include>
             <directory>src</directory>
         </include>
-        <exclude>
-            <file>src/CertificateRenderer.php</file>
-            <file>src/CertificateRendererServiceProvider.php</file>
-            <file>src/Facades/Certigniter.php</file>
-            <file>src/Support/QrCodeRenderer.php</file>
-        </exclude>
     </source>
 </phpunit>

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Support;
 
 use Closure;
@@ -53,18 +55,24 @@ class IgniterPackage
     public static function decode(string $contents, string $encryptionKey): array
     {
         if (strlen($contents) > self::MAX_FILE_BYTES) {
-            throw new RuntimeException('The .igniter file exceeds the supported size of 20 MB.');
+            throw new RuntimeException(sprintf(
+                'This .igniter file is %.1f MB, over the %d MB this package will open. Re-export it from '
+                .'Certigniter Design Studio - a file this size usually means a very large background image '
+                .'that Design Studio will downscale on export.',
+                strlen($contents) / 1048576,
+                self::MAX_FILE_BYTES / 1048576,
+            ));
         }
 
         if (! str_starts_with($contents, self::MAGIC)) {
-            throw new RuntimeException(
-                'Not a valid .igniter file: expected a ZIP container, got something else.'
-            );
+            throw new RuntimeException(self::notAPackageMessage($contents));
         }
 
         if (! class_exists(ZipArchive::class)) {
             throw new RuntimeException(
-                'Reading a .igniter file requires PHP\'s zip extension (ext-zip), which is not installed.'
+                'Reading a .igniter file requires PHP\'s zip extension (ext-zip), which is not enabled on this '
+                .'server. Install it (e.g. `apt-get install php-zip`, `pecl install zip`, or enable '
+                .'extension=zip in php.ini) and restart PHP-FPM.'
             );
         }
 
@@ -72,35 +80,62 @@ class IgniterPackage
             $entries = self::inspectEntries($archive);
 
             if (! isset($entries['manifest.json'])) {
-                throw new RuntimeException('Corrupt .igniter package: no manifest.json in the archive root.');
+                throw new RuntimeException(
+                    'This .igniter file is a ZIP archive but has no manifest.json in its root, so it is not a '
+                    .'certificate package. Re-export the certificate from Certigniter Design Studio, and check '
+                    .'that nothing (a zip tool, an archive manager) has repacked the file since.'
+                );
             }
 
             $manifest = self::decodeManifest(self::readEntry($archive, $entries['manifest.json']), $encryptionKey);
 
             if (($manifest['format'] ?? null) !== 'igniter' || ($manifest['version'] ?? null) !== 1) {
-                throw new RuntimeException(
-                    'Unsupported .igniter package version - this file was written by a newer Certigniter than this package understands.'
-                );
+                throw new RuntimeException(sprintf(
+                    'This .igniter file is format "%s" version %s; this package reads format "igniter" version 1. '
+                    .'It was written by a newer Certigniter Design Studio than this server understands - upgrade '
+                    .'certigniter/laravel-certificate-renderer (`composer update certigniter/laravel-certificate-renderer`), '
+                    .'or re-export the certificate from a matching Design Studio version.',
+                    is_scalar($manifest['format'] ?? null) ? (string) $manifest['format'] : 'unknown',
+                    is_scalar($manifest['version'] ?? null) ? (string) $manifest['version'] : 'unknown',
+                ));
             }
 
             if (! is_array($manifest['project'] ?? null)) {
-                throw new RuntimeException('That .igniter file does not contain a project.');
+                throw new RuntimeException(
+                    'This .igniter file decrypted correctly but carries no certificate design. It was most likely '
+                    .'exported from Design Studio before the design finished saving - re-export it.'
+                );
             }
 
-            $budget = strlen(json_encode($manifest['project']));
+            // A project that cannot be re-encoded (invalid UTF-8 survives
+            // json_decode into strings that json_encode then rejects) has no
+            // measurable size, so budget it at its whole allowance rather
+            // than letting strlen(false) blow up on an uploaded file.
+            $encodedProject = json_encode($manifest['project']);
+            $budget = $encodedProject === false ? self::MAX_EXPANDED_BYTES : strlen($encodedProject);
 
             return self::mapAssets($manifest['project'], function (mixed $value, string $kind) use ($archive, $entries, &$budget): mixed {
                 if ($value === null || $value === '') {
                     return $value;
                 }
 
+                $noun = $kind === 'fonts' ? 'font' : 'image';
+
                 if (! is_array($value) || ! is_string($value['asset_path'] ?? null)) {
-                    throw new RuntimeException('Invalid asset reference in .igniter package.');
+                    throw new RuntimeException(
+                        "This .igniter file's manifest points at a {$noun} in a form this package does not "
+                        .'understand. The file has been modified or repacked since Design Studio wrote it - '
+                        .'re-export the certificate.'
+                    );
                 }
 
                 $path = $value['asset_path'];
                 if (! self::isAssetPath($path, $kind) || ! isset($entries[$path])) {
-                    throw new RuntimeException("Missing or unsafe asset reference in .igniter package: {$path}");
+                    throw new RuntimeException(
+                        "This .igniter file references a {$noun} ({$path}) that is missing from the archive "
+                        .'or sits outside the assets/ tree. The file is incomplete or has been repacked - '
+                        .'re-export the certificate from Design Studio.'
+                    );
                 }
 
                 // Repeated references to one asset each cost their expansion
@@ -108,12 +143,54 @@ class IgniterPackage
                 // times to blow up memory downstream.
                 $budget += 4 * (int) ceil($entries[$path]['size'] / 3);
                 if ($budget > self::MAX_EXPANDED_BYTES) {
-                    throw new RuntimeException('The expanded .igniter project is too large.');
+                    throw new RuntimeException(sprintf(
+                        'This certificate expands to more than %d MB of images and fonts once unpacked, more than '
+                        .'this package will hold in memory. Re-export it from Design Studio with fewer or smaller '
+                        .'images.',
+                        self::MAX_EXPANDED_BYTES / 1048576,
+                    ));
                 }
 
                 return base64_encode(self::readEntry($archive, $entries[$path]));
             });
         });
+    }
+
+    /**
+     * Say what this file looks like instead of a package, and what to do
+     * about it. "Expected a ZIP container, got something else" is accurate
+     * and useless: the person holding the file is usually a certificate
+     * admin, not the developer who will read the stack trace. The three
+     * cases below cover what actually turns up in an upload field.
+     */
+    private static function notAPackageMessage(string $contents): string
+    {
+        if ($contents === '') {
+            return 'The uploaded .igniter file is empty - the upload did not complete. Try again, and check the '
+                .'server\'s upload_max_filesize/post_max_size if larger files keep arriving empty.';
+        }
+
+        // Before 3.0 a .igniter was the bare AES envelope itself, with every
+        // font and image inline as base64. Those files still exist in
+        // people\'s downloads folders and are the single most likely thing
+        // to be uploaded here by mistake. Matched on the envelope's opening
+        // key rather than by decoding it: a real one is megabytes of inline
+        // base64, and the point is to name the format, not to read it.
+        if (preg_match('/\\A\\s*\\{\\s*"(iv|value)"\\s*:\\s*"/', substr($contents, 0, 512)) === 1) {
+            return 'This is a pre-3.0 .igniter file (a single encrypted blob rather than a package). Open it in '
+                .'Certigniter Design Studio and export it again - the current format carries its fonts and '
+                .'images alongside the design, and this package only reads that form.';
+        }
+
+        if (preg_match('/\A\s*(<!doctype|<html|\{|\[)/i', $contents) === 1) {
+            return 'This is not a .igniter file - it looks like text or a web page (an error response saved to '
+                .'disk, most likely) rather than a certificate package. Download or export the certificate '
+                .'again and upload that file.';
+        }
+
+        return 'This is not a .igniter file. A certificate package is a ZIP archive written by Certigniter '
+            .'Design Studio; this file is something else. Re-export the certificate from Design Studio and '
+            .'upload that.';
     }
 
     /**
@@ -175,7 +252,12 @@ class IgniterPackage
     private static function inspectEntries(ZipArchive $archive): array
     {
         if ($archive->numFiles > self::MAX_ENTRIES) {
-            throw new RuntimeException('The .igniter package contains too many entries.');
+            throw new RuntimeException(sprintf(
+                'This .igniter archive holds %d files; a certificate package has at most %d. This is not a '
+                .'certificate export - check that the right file was uploaded.',
+                $archive->numFiles,
+                self::MAX_ENTRIES,
+            ));
         }
 
         $entries = [];
@@ -184,7 +266,10 @@ class IgniterPackage
         for ($index = 0; $index < $archive->numFiles; $index++) {
             $stat = $archive->statIndex($index);
             if ($stat === false) {
-                throw new RuntimeException('Could not read the .igniter package directory.');
+                throw new RuntimeException(
+                    'The .igniter archive\'s file listing could not be read - the upload is truncated or '
+                    .'corrupt. Try uploading the file again, or re-export it from Design Studio.'
+                );
             }
 
             $path = $stat['name'];
@@ -192,23 +277,39 @@ class IgniterPackage
             $isKnown = $path === 'manifest.json' || self::isAssetPath($path, 'images') || self::isAssetPath($path, 'fonts');
 
             if (isset($entries[$path]) || (! $isDirectory && ! $isKnown)) {
-                throw new RuntimeException("Unsafe or duplicate path in .igniter package: {$path}");
+                throw new RuntimeException(
+                    "This .igniter archive contains an unexpected or duplicated member ({$path}). A certificate "
+                    .'package holds only manifest.json and an assets/ tree, so this file has been repacked or '
+                    .'tampered with since Design Studio wrote it - re-export the certificate and upload that.'
+                );
             }
 
             $archive->getExternalAttributesIndex($index, $operatingSystem, $attributes);
             if ($operatingSystem === ZipArchive::OPSYS_UNIX && (($attributes >> 16) & 0170000) === 0120000) {
-                throw new RuntimeException('Symbolic links are not allowed in .igniter packages.');
+                throw new RuntimeException(
+                    'This .igniter archive contains a symbolic link, which a certificate package never does. '
+                    .'The file has been repacked or tampered with - re-export the certificate from Design Studio '
+                    .'and upload that instead.'
+                );
             }
 
             $totalBytes += $stat['size'];
             $limit = $path === 'manifest.json' ? self::MAX_MANIFEST_BYTES : self::MAX_FILE_BYTES;
             if ($stat['size'] > $limit || $totalBytes > self::MAX_EXPANDED_BYTES) {
-                throw new RuntimeException('The expanded .igniter package is too large.');
+                throw new RuntimeException(sprintf(
+                    'This .igniter archive unpacks to more than %d MB, more than this package will open. '
+                    .'Re-export it from Design Studio with fewer or smaller images.',
+                    self::MAX_EXPANDED_BYTES / 1048576,
+                ));
             }
 
             if (($stat['encryption_method'] ?? ZipArchive::EM_NONE) !== ZipArchive::EM_NONE
                 || ! in_array($stat['comp_method'], [ZipArchive::CM_STORE, ZipArchive::CM_DEFLATE], true)) {
-                throw new RuntimeException('Unsupported compression or ZIP-level encryption in .igniter package.');
+                throw new RuntimeException(
+                    "The archive member '{$path}' uses password protection or a compression method Design Studio "
+                    .'never writes. This file has been repacked by another zip tool - re-export the certificate '
+                    .'from Design Studio and upload that instead.'
+                );
             }
 
             if ($isDirectory) {
@@ -230,7 +331,10 @@ class IgniterPackage
         $bytes = $archive->getFromIndex($entry['index'], $entry['size'] + 1);
 
         if ($bytes === false || strlen($bytes) !== $entry['size'] || crc32($bytes) !== $entry['crc']) {
-            throw new RuntimeException('Corrupt asset or manifest in .igniter package.');
+            throw new RuntimeException(
+                'A file inside this .igniter package failed its checksum, so the upload is damaged. Upload the '
+                .'file again - if it keeps failing, re-export the certificate from Design Studio.'
+            );
         }
 
         return $bytes;
@@ -242,7 +346,11 @@ class IgniterPackage
         $manifest = json_decode(Encryption::decrypt($envelope, $encryptionKey), true);
 
         if (! is_array($manifest)) {
-            throw new RuntimeException('Decrypted .igniter manifest is not valid JSON.');
+            throw new RuntimeException(
+                'This .igniter file\'s manifest decrypted but is not valid JSON. The encryption key configured '
+                .'here (config("certigniter.encryption_key") / CERTIGNITER_ENCRYPTION_KEY) most likely differs '
+                .'from the one Design Studio sealed the file with - check that the two match exactly.'
+            );
         }
 
         return $manifest;
@@ -262,20 +370,38 @@ class IgniterPackage
     {
         $file = tmpfile();
         if ($file === false) {
-            throw new RuntimeException('Could not create a temporary file to stage the .igniter package.');
+            throw new RuntimeException(sprintf(
+                'Could not create a temporary file in %s to stage the .igniter package - check that the '
+                .'directory exists, is writable by the web server user, and has free space.',
+                sys_get_temp_dir(),
+            ));
         }
 
         $archive = new ZipArchive;
         $opened = false;
 
         try {
-            $path = stream_get_meta_data($file)['uri'];
+            $path = stream_get_meta_data($file)['uri'] ?? null;
+            if (! is_string($path) || $path === '') {
+                throw new RuntimeException(
+                    'PHP gave no filesystem path for the temporary file staging the .igniter package, so the '
+                    .'archive cannot be opened. Check that sys_temp_dir points at a real directory.'
+                );
+            }
             if (fwrite($file, $contents) !== strlen($contents)) {
-                throw new RuntimeException('Could not stage the .igniter package.');
+                throw new RuntimeException(sprintf(
+                    'Could not write the .igniter package to a temporary file in %s - the disk is most likely '
+                    .'full or the directory is not writable by the web server user.',
+                    sys_get_temp_dir(),
+                ));
             }
 
             if ($archive->open($path, ZipArchive::RDONLY | ZipArchive::CHECKCONS) !== true) {
-                throw new RuntimeException('Not a valid .igniter ZIP package.');
+                throw new RuntimeException(
+                    'This file starts like a ZIP archive but could not be opened as one - it is truncated or '
+                    .'damaged, which usually means an interrupted upload. Upload it again, or re-export the '
+                    .'certificate from Certigniter Design Studio.'
+                );
             }
             $opened = true;
 

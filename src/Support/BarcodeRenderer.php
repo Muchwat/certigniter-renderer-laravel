@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Support;
 
 use Picqer\Barcode\BarcodeGenerator;
@@ -24,6 +26,7 @@ class BarcodeRenderer
         'code128' => BarcodeGenerator::TYPE_CODE_128,
     ];
 
+    /** @param array{r: int, g: int, b: int} $foreground */
     public static function pngDataUri(
         string $data,
         string $barcodeType,

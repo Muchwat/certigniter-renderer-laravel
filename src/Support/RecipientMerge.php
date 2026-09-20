@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Support;
 
 use Certigniter\CertificateRenderer\Data\CertificateProject;
@@ -107,7 +109,10 @@ class RecipientMerge
         return $clone;
     }
 
-    /** @param array<string, string> $record @param string[] $candidateNames */
+    /**
+     * @param  array<string, string>  $record
+     * @param  string[]  $candidateNames
+     */
     public static function recordValue(array $record, array $candidateNames): string
     {
         $normalizedRecord = [];
@@ -131,8 +136,12 @@ class RecipientMerge
     {
         return (string) preg_replace_callback(
             '/\{\{([^{}]+)\}\}|<([^<>]+)>/',
+            /** @param array<int, string> $match */
             function (array $match) use ($record): string {
-                $token = ($match[1] ?? '') !== '' ? $match[1] : ($match[2] ?? '');
+                // Group 1 is always present - PHP fills an unmatched
+                // intermediate group with '' - but group 2 is dropped
+                // entirely when the {{token}} branch is the one that matched.
+                $token = $match[1] !== '' ? $match[1] : ($match[2] ?? '');
 
                 foreach ([$token, trim($token)] as $key) {
                     if (array_key_exists($key, $record)) {

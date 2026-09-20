@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Tests\Unit;
 
 use Certigniter\CertificateRenderer\Data\CertificateProject;
@@ -9,6 +11,7 @@ use PHPUnit\Framework\TestCase;
 
 class GroupComposerTest extends TestCase
 {
+    /** @param DesignElement[] $elements */
     private function project(array $elements): CertificateProject
     {
         return new CertificateProject(

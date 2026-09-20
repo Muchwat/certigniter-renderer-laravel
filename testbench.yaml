@@ -1,0 +1,7 @@
+# Testbench's skeleton application, used by `vendor/bin/testbench` and by
+# larastan when it boots a Laravel app to analyse this package against.
+# The provider is listed explicitly because this package is the one being
+# developed - it is not in vendor/, so composer package discovery never
+# sees its `extra.laravel` block the way a host application's would.
+providers:
+  - Certigniter\CertificateRenderer\CertificateRendererServiceProvider

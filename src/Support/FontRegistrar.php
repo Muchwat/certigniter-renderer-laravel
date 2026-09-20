@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Support;
 
 use Dompdf\Dompdf;
@@ -126,7 +128,11 @@ class FontRegistrar
         return self::FALLBACK_FAMILY;
     }
 
-    /** Families the current project actually carried bytes for, in the order they were registered. */
+    /**
+     * Families the current project actually carried bytes for, in the order they were registered.
+     *
+     * @return string[]
+     */
     public function embeddedFamilies(): array
     {
         return array_keys($this->registeredEmbeddedFamilies);
@@ -136,6 +142,9 @@ class FontRegistrar
     {
         try {
             $font = Font::load($path);
+            if ($font === null) {
+                return;
+            }
             $font->parse();
             $unitsPerEm = (float) $font->getData('head', 'unitsPerEm');
             $ascent = (float) $font->getData('hhea', 'ascent');

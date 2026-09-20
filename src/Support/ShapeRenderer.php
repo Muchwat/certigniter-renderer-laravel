@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Certigniter\CertificateRenderer\Support;
 
 use Certigniter\CertificateRenderer\Data\DesignElement;
@@ -160,6 +162,8 @@ class ShapeRenderer
      * sees while editing matches what gets rendered here: a proportional
      * "shrink everything together" scale (the CSS border-radius rule this
      * used to follow) made one corner's radius visibly affect the others.
+     *
+     * @return array{float, float, float, float}
      */
     private static function cornerRadii(DesignElement $element, float $width, float $height): array
     {
