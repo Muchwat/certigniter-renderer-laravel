@@ -5,16 +5,15 @@ declare(strict_types=1);
 namespace Certigniter\CertificateRenderer\Support;
 
 /**
- * Certigniter writes colors in two different byte orders depending on the
- * file's `color_format`:
+ * An .igniter file stores colours in one of two byte orders, declared by
+ * the project's `color_format`:
  *
- *  - `"css-hex"` (current app versions): `#RRGGBB` or `#RRGGBBAA` - alpha
- *    LAST, standard CSS order. certificate_project.dart's toJson() walks
- *    the whole JSON tree and rewrites every string value under a key whose
- *    name contains "color"/"swatch" into this form before saving.
- *  - Absent (older files, or hand-edited JSON): Flutter's native
- *    `#AARRGGBB` - alpha FIRST. 6-digit opaque colors are identical either
- *    way, so this only matters for translucent colors.
+ *  - `"css-hex"` (current files): `#RRGGBB` or `#RRGGBBAA`, alpha last,
+ *    in standard CSS order. Every string under a key whose name contains
+ *    "color" or "swatch" uses this form.
+ *  - Absent (older files, or hand-edited JSON): legacy `#AARRGGBB`, alpha
+ *    first. Six-digit opaque colours are identical either way, so the
+ *    distinction only matters for translucent colours.
  *
  * Every color read out of a project's `properties` must go through here
  * rather than being parsed ad hoc, or translucent colors from older files
@@ -25,8 +24,8 @@ class ColorConverter
 {
     /**
      * `$fallbackHex` is always CSS hex (#RRGGBB or #RRGGBBAA), whatever the
-     * file's own `$colorFormat`: it is a default written in this code, like
-     * the Studio's own `'#00000066'`, not a value read from the file.
+     * file's own `$colorFormat`: it is a default written in this code, such
+     * as `'#00000066'` for a shadow, not a value read from the file.
      *
      * @return array{r: int, g: int, b: int, a: float}
      */
@@ -62,7 +61,7 @@ class ColorConverter
             ];
         }
 
-        // AARRGGBB (Flutter native / legacy files)
+        // AARRGGBB (legacy files)
         return [
             'r' => self::byte($digits, 2),
             'g' => self::byte($digits, 4),

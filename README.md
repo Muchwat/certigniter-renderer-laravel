@@ -1,7 +1,8 @@
 # Certigniter Certificate Renderer for Laravel
 
 Render encrypted Certigniter `.igniter` certificate templates as PDFs in a
-Laravel application—without Flutter, the desktop application, or a browser.
+Laravel application, entirely in PHP: no browser, no headless Chrome, and no
+external service.
 
 The package can:
 
@@ -83,9 +84,9 @@ Set the shared Certigniter encryption key in `.env`:
 CERTIGNITER_ENCRYPTION_KEY=your-32-byte-shared-key
 ```
 
-This is not Laravel's `APP_KEY`. It must exactly match the `encryptionKey`
-used by the Certigniter application that created the file. A wrong key causes
-decryption to fail before parsing or rendering begins.
+This is not Laravel's `APP_KEY`. It must exactly match the key the file was
+encrypted with. A wrong key causes decryption to fail before parsing or
+rendering begins.
 
 The published configuration also controls:
 
@@ -103,8 +104,8 @@ renderer markup:
 php artisan vendor:publish --tag=certigniter-views
 ```
 
-Prefer the package view unless you are prepared to maintain rendering parity
-when new element properties are added.
+Prefer the package view unless you are prepared to keep a published copy up
+to date as new element properties are added.
 
 ## Quick start
 
@@ -200,12 +201,11 @@ not just bare IDs, so a developer can build a useful selection screen:
 ```
 
 The replacement hint is one of `background`, `logo`, `signature`, or `image`.
-`aiGenerated`/`aiModel`/`aiGeneratedAt`/`aiPromptPreview` are set on an image
-Certigniter's Design Studio generated with its AI background tool -
-`aiGenerated` alone is enough to classify it as `background`, even if it's
-since been resized below the 90% area fallback the hint otherwise uses.
-`aiPromptPreview` is the same 80-character truncation `textPreview`/
-`dataPreview` use elsewhere in this catalog. The catalog also provides
+`aiGenerated`/`aiModel`/`aiGeneratedAt`/`aiPromptPreview` describe an
+AI-generated image. `aiGenerated` alone is enough to classify an image as
+`background`, even if it has since been resized below the 90% area threshold
+the hint otherwise uses. `aiPromptPreview` is truncated to 80 characters, like
+`textPreview` and `dataPreview` elsewhere in this catalog. The catalog also provides
 relevant summaries for text, variable text, shapes, QR codes, barcodes, and
 groups. It intentionally excludes embedded base64 font and image payloads,
 making it safe and lightweight to return as JSON.
@@ -248,14 +248,11 @@ template previews.
 
 ### Consistent date formatting
 
-`$recipient` values are substituted exactly as given - `'Issue Date' =>
-'2026-08-11'` and `'Issue Date' => 'Aug 11, 2026'` are both valid, and this
-package has no opinion on which. If your own values come from a real date
-(rather than an already-formatted string, e.g. from a CSV import or an
-HTML `<input type="date">`, which always yields ISO `yyyy-MM-dd`), format
-them with `$project->dateFormat` first so every certificate for a project
-shows dates the same way its designer chose in Design Studio's date-format
-picker, regardless of how each certificate was issued:
+`$recipient` values are substituted exactly as given: `'Issue Date' =>
+'2026-08-11'` and `'Issue Date' => 'Aug 11, 2026'` are both valid. If a value
+comes from a real date rather than an already-formatted string, format it
+with `$project->dateFormat` first, so every certificate for a project shows
+dates in the format its designer chose:
 
 ```php
 use Certigniter\CertificateRenderer\Support\DateFormatting;
@@ -268,18 +265,32 @@ $recipient = [
 ];
 ```
 
-`$project->dateFormat` is a Dart/ICU-style pattern (e.g. `'MMM d, yyyy'`) -
-the same syntax the picker itself uses - and defaults to `'MMM d, yyyy'`
-for any `.igniter` file saved before this field existed.
-`DateFormatting::toPhpFormat()` and `::format()` translate a small, fixed
-set of patterns (exactly the ones the picker offers) into PHP's `date()`
-syntax; an unrecognized pattern falls back to the default rather than
-guessing at a translation.
+`$project->dateFormat` is an ICU date pattern such as `'MMM d, yyyy'`, which
+is also the default for files that predate the field.
+`DateFormatting::toPhpFormat()` and `::format()` translate the supported
+patterns into PHP's `date()` syntax:
+
+| Pattern | Example |
+|---|---|
+| `MMM d, yyyy` (default) | Aug 11, 2026 |
+| `MMMM d, yyyy` | August 11, 2026 |
+| `d MMM yyyy` | 11 Aug 2026 |
+| `MM/dd/yyyy` | 08/11/2026 |
+| `dd/MM/yyyy` | 11/08/2026 |
+| `yyyy-MM-dd` | 2026-08-11 |
+| `EEEE, MMMM d, yyyy` | Tuesday, August 11, 2026 |
+
+An unrecognized pattern falls back to the default rather than guessing at a
+translation.
+
+A text element's recipient value that is already an ISO date (`yyyy-MM-dd`,
+e.g. from a CSV import or an HTML `<input type="date">`) is reformatted
+automatically during rendering, using the element's own date format or,
+failing that, the project's.
 
 ## Dynamic QR code and barcode values
 
-A QR code or barcode element's Design Studio "Content source" (`qrType`)
-is one of:
+A QR code or barcode element's content source (`qrType`) is one of:
 
 - **Custom value** (`'custom'`) - a static string, optionally containing
   `{{token}}`/`<token>` placeholders resolved from `recipient` like any
@@ -289,9 +300,7 @@ is one of:
   `{{ variableName }}` for older consumers) - the whole payload is replaced
   by that column's value, matched case-insensitively and trimmed like a text
   element's `variableName`; a recipient with no value for it skips the code
-  with a warning (not to be confused with this section's own "dynamic QR code
-  values" - the `qrCodeOverrides` mechanism below - which is a different,
-  host-application-driven kind of dynamic content); or
+  with a warning; or
 - **Verification link** (`'verification'` - `'authentication'` is a legacy
   value older projects may still carry, and is accepted identically) - the
   element intentionally stores no `data` at all. Its real payload doesn't
@@ -325,8 +334,8 @@ $pdf = $renderer->renderProjectToPdf(
 );
 ```
 
-`qrCodeOverrides` accepts any qrcode or barcode element ID, not only a verification
-link - an explicit override always wins over both a static `data` value and
+`qrCodeOverrides` accepts any QR code or barcode element ID, not only a
+verification link. An explicit override always wins over both a static `data` value and
 `{{token}}`/`<token>` substitution, so it also works as a direct escape
 hatch for a value your application computed rather than one that came from
 a recipient record. If a verification-link code has no override
@@ -340,9 +349,9 @@ application state per iteration.
 
 ## Replacing logos and signatures
 
-Templates created elsewhere may contain the wrong branding or a local path
-such as `/Users/designer/Desktop/signature.png`. Server-side code cannot read
-that foreign path. Supply replacement bytes keyed by the image element ID:
+A template may contain the wrong branding, or an image stored only as a local
+path such as `/Users/designer/Desktop/signature.png`, which a server cannot
+read. Supply replacement bytes keyed by the image element ID:
 
 ```php
 $request->validate([
@@ -507,10 +516,10 @@ capture(
 ```
 
 Renders straight to a PNG preview and writes it to `$outputPath` (a temp file
-when omitted), returning the path written. This is the method a host app
-calls at the moment a user installs/imports an `.igniter` file, to get a
-thumbnail to display for it. Shells out to a `gs` (Ghostscript) binary
-directly - no `imagick` PHP extension involved - configurable via
+when omitted), returning the path written. Use it when your application
+imports an `.igniter` file, to get a thumbnail to display for it. Shells out
+to a `gs` (Ghostscript) binary directly - no `imagick` PHP extension
+involved - configurable via
 `certigniter.ghostscript_binary` / `CERTIGNITER_GHOSTSCRIPT_BINARY` (see
 [Requirements](#requirements)); throws a `RuntimeException` if the binary is
 missing or fails.
@@ -522,9 +531,7 @@ Two things worth knowing before wiring this into an install/import flow:
   onboarding hook, catch the exception and treat it as non-fatal - Composer
   aborts the entire `install`/`update` on any non-zero script exit, so a
   teammate or CI runner without Ghostscript would otherwise be unable to
-  install your app at all. This package's own `certificate:snapshot`
-  Artisan command in the parent app does exactly that (warns, still exits
-  `0`).
+  install your app at all. Log a warning and exit `0` instead.
 - **A real-world `.igniter` file with path-only images will produce an
   incomplete thumbnail, not an error.** Per the `imageData`-vs-`path`
   distinction described under [Replacing logos and
@@ -565,7 +572,7 @@ barcode - see [Dynamic QR code and barcode values](#dynamic-qr-code-and-barcode-
 
 | Feature | Support |
 |---|---|
-| Current CSS and legacy Flutter color formats | Yes |
+| CSS hex and legacy ARGB color formats | Yes |
 | Static and variable text | Yes |
 | Font family, weight, style, alignment | Yes |
 | Line height and letter spacing | Yes |
@@ -577,31 +584,25 @@ barcode - see [Dynamic QR code and barcode values](#dynamic-qr-code-and-barcode-
 | Blurred drop shadows | Yes (approximated) |
 | Per-corner rounded rectangles | Yes |
 | Images with contain/fill/cover, crops and content alignment | Yes |
-| Circle and rounded-rectangle image masks, with the Studio's size factors | Yes |
+| Circle and rounded-rectangle image masks, with size factors | Yes |
 | Horizontal and vertical element mirroring | Yes |
-| QR codes, module for module as the Studio draws them (padding, round modules/eyes) | Yes |
+| QR codes, with padding and square or round modules and eyes | Yes |
 | Dynamic and verification-link QR codes and barcodes | Yes |
-| Code39, EAN-13, EAN-8, UPC-A, ITF, Codabar, Code128, bar for bar as the Studio draws them, with caption | Yes |
+| Code 39, EAN-13, EAN-8, UPC-A, ITF, Codabar and Code 128 barcodes, with caption | Yes |
 | Group rotation and opacity composition | Yes, configurable |
 | Fonts carried inside the `.igniter` | Yes |
 
-Typography values are converted from Certigniter's 96-DPI canvas pixels to
-72-DPI PDF points. This prevents the approximately 1.33× text enlargement
-seen in older exporters and keeps titles aligned with the Design Studio.
+QR codes and barcodes are encoded deterministically: the same value always
+produces the same symbol, module for module.
+
+Typography values are converted from 96-DPI CSS pixels to 72-DPI PDF points,
+so text is set at exactly its designed size.
 
 ### Fonts
 
 A `.igniter` file is self-contained: every font family it uses travels inside
 it, as raw members of the archive's `assets/fonts/` tree. This package ships no
 font files of its own and registers exactly what the file carries.
-
-That is a change from earlier versions, which bundled Playfair Display,
-Cormorant Garamond, Cinzel, Roboto, Montserrat, and Inter, and relied on
-Certigniter leaving those families out of exports. That made a file's fidelity
-depend on the renderer's inventory rather than on the file, and it failed
-silently when the two drifted apart - a valid file simply rendered in the
-wrong typeface. It also made this package about 2.8 MB heavier for every
-install, most of which no given certificate needed.
 
 A family the file names but carries no bytes for renders in Dompdf's own
 built-in DejaVu Sans. Re-save such a project from Certigniter so its fonts
@@ -614,13 +615,13 @@ travel with it.
   gradient stop is used as a flat fallback color.
 - Dompdf draws no SVG gradients, filters or clip paths. Gradient shape fills
   are drawn as flat bands at most 0.25 mm apart, and blurred shadows (shape
-  and text) as 48 faint copies spread over the Studio's Gaussian (8 for very
-  heavy library shapes). Both read as the Studio's, but are not its exact
-  pixels.
-- Barcode captions are set in Roboto only if the file carries it; otherwise
-  in DejaVu Sans. The Studio always uses Roboto.
-- A path-only image from another computer cannot render unless the host app
-  supplies an image override.
+  and text) as 48 faint copies spread over the blur's Gaussian (8 for very
+  heavy library shapes). Both read as smooth gradients and soft shadows at
+  print resolution.
+- Barcode captions are set in Roboto when the file carries it, otherwise in
+  DejaVu Sans.
+- A path-only image from another computer cannot render unless your
+  application supplies an image override.
 - The project model is currently single-page/single-sided.
 
 ## Security and production guidance
@@ -655,11 +656,11 @@ php artisan config:clear
 Inspect the image element. If it has `path` but no `imageData`, upload a
 replacement and pass it in `imageOverrides` using that element's ID.
 
-### Text is a different size from the editor
+### Text is in the wrong typeface or size
 
-Update to the latest package revision. Current versions convert canvas pixels
-to PDF points. Also verify the template's font is embedded or included in
-`config/certigniter.php`.
+Check `warnings()` and the font's presence in the file: a family the file
+carries no bytes for renders in DejaVu Sans, whose metrics differ. See
+[A font falls back to DejaVu Sans](#a-font-falls-back-to-dejavu-sans).
 
 ### A barcode is skipped
 
@@ -680,8 +681,8 @@ directory to install into.
 ### An upload is rejected as "not a ZIP container"
 
 A `.igniter` is a ZIP package. A file that starts with anything else is not
-one - most likely it was produced by a build that predates the format, and
-needs re-exporting from Certigniter.
+one - most likely it predates the current format, and needs re-exporting from
+Certigniter.
 
 ## Testing
 
@@ -695,9 +696,8 @@ composer analyse            # PHPStan, level 8
 ```
 
 **`tests/Unit`** covers every class that works without a booted Laravel
-application - parsing, decryption, geometry, colors, merging. It runs
-standalone after `composer install`, which is what a `composer require`
-install outside the Certigniter monorepo gets to verify its install.
+application - parsing, decryption, geometry, colors, merging, QR and barcode
+encoding. It runs standalone after `composer install`.
 
 **`tests/Integration`** boots a real Laravel application with
 [Testbench][testbench], which discovers this package's service provider
@@ -711,17 +711,7 @@ own font travelled into the file.
 
 Fixtures are built in memory by `tests/Fixtures/IgniterFixture`, not
 committed as binaries, so a test reads as the project it is about and the
-suite exercises the *current* container format rather than a snapshot of it
-that nobody re-exports.
-
-The host Laravel app in this repository keeps its own Pest suite against a
-real encrypted fixture, covering the app's upload and controller logic on
-top of the package:
-
-```bash
-php artisan test tests/Feature/Certigniter
-php artisan test tests/Feature/CertificateControllerTest.php
-```
+suite exercises the *current* container format rather than a snapshot of it.
 
 [testbench]: https://packages.tools/testbench/
 

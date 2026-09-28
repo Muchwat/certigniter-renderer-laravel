@@ -10,8 +10,8 @@ use Certigniter\CertificateRenderer\Support\Units;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Placement mirrors canvasRendering.js's drawQr(): a background square of
- * the box's shorter side, centred, with `padding` Studio px of quiet zone.
+ * Placement: a background square of the box's shorter side, centred, with
+ * `padding` CSS pixels of quiet zone.
  */
 class QrCodeRendererTest extends TestCase
 {
@@ -28,9 +28,9 @@ class QrCodeRendererTest extends TestCase
         ]);
     }
 
-    public function test_the_error_correction_level_uses_the_dart_qr_constants(): void
+    public function test_the_error_correction_level_uses_the_format_indicator_bits(): void
     {
-        // igniterProject.js QR_LEVEL_TO_FLUTTER: L=1, M=0, Q=3, H=2 - not alphabetical.
+        // ISO/IEC 18004 format indicator: L=1, M=0, Q=3, H=2 - not alphabetical.
         $this->assertSame('L', QrCodeRenderer::levelLetter(1));
         $this->assertSame('M', QrCodeRenderer::levelLetter(0));
         $this->assertSame('Q', QrCodeRenderer::levelLetter(3));

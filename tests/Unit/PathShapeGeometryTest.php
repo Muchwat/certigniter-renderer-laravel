@@ -8,8 +8,8 @@ use Certigniter\CertificateRenderer\Support\PathShapeGeometry;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Same inputs and expected paths as the web Studio's shapePaths.test.js
- * (certigniter-saas), so the port provably draws what the editor draws.
+ * Library-shape outlines for known inputs: stretching to the box, the stroke
+ * inset, corner rounding and hidden parts.
  */
 class PathShapeGeometryTest extends TestCase
 {

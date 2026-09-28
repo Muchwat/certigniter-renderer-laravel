@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace Certigniter\CertificateRenderer\Support;
 
 /**
- * The web Studio blurs a shape's shadow (canvas `filter: blur()` with a
- * standard deviation of `shadowBlur / 2`, default 3 mm) and a text shadow
- * (`shadow.blur` px). Neither PDF engine can blur vectors, so the shadow is
- * drawn as several faint copies of the shape spread over the same Gaussian:
- * four rings of twelve, at the radii that split a 2-D Gaussian's mass into
- * equal quarters (each ring at the middle of its quarter). Each copy is translucent enough that all of them stacked
- * reach the shadow colour's own alpha, so the centre keeps the Studio's
- * strength and the edge fades over the Studio's distance.
+ * Approximates a blurred shadow. A shape's shadow is a Gaussian blur with
+ * a standard deviation of `shadowBlur / 2` (default 3 mm), and a text
+ * shadow one of `shadow.blur / 2` px. PDF has no vector blur, so the
+ * shadow is drawn as several faint copies of the shape spread over that
+ * Gaussian: four rings of twelve, at the radii that split a 2-D Gaussian's
+ * mass into equal quarters (each ring at the middle of its quarter). Each
+ * copy is translucent enough that all of them stacked reach the shadow
+ * colour's own alpha, so the centre keeps the shadow's full strength and
+ * the edge fades over the blur's full distance.
  *
  * A blur of zero is one copy at full strength, the unblurred shadow.
  */

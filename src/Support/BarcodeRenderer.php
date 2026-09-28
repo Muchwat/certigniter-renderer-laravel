@@ -7,16 +7,15 @@ namespace Certigniter\CertificateRenderer\Support;
 use Certigniter\CertificateRenderer\Data\DesignElement;
 
 /**
- * Lays out a barcode the way the web Studio draws it (canvasRendering.js's
- * `drawBarcode()`): the whole box filled with `backgroundColor`, the
- * symbol's modules (BarcodeEncoding, a port of the JsBarcode encoders the
- * Studio uses) stretched edge to edge across the box, and, unless
- * `showText` is false, the caption centred along the bottom in
- * min(10px, height / 3) Roboto, with fontSize * 1.2 + 2px kept free for it.
+ * Lays out a barcode element: the whole box filled with `backgroundColor`,
+ * the symbol's modules (see BarcodeEncoding) stretched edge to edge across
+ * the box, and, unless `showText` is false, the human-readable caption
+ * centred along the bottom in min(10px, height / 3) Roboto, with
+ * fontSize * 1.2 + 2px reserved for it.
  */
 class BarcodeRenderer
 {
-    /** canvasRendering.js BARCODE_SAMPLES: what the Studio draws for a barcode with no data. */
+    /** A valid sample value per symbology, encoded when a barcode has no data so the template still previews meaningfully. */
     private const SAMPLES = [
         'code128' => '123456789', 'code39' => 'CODE39', 'ean13' => '4006381333931', 'ean8' => '96385074',
         'upcA' => '036000291452', 'itf' => '1234567890', 'codabar' => 'A123456A',
@@ -28,7 +27,7 @@ class BarcodeRenderer
     }
 
     /**
-     * @param  float  $pixelsPerUnit  Studio px (1/96 in) in one of the project's units
+     * @param  float  $pixelsPerUnit  CSS pixels (1/96 in) in one of the project's units
      * @return array{modules: string, text: string, showText: bool, barHeight: float, fontSize: float}
      *   `barHeight` and `fontSize` are in the project's unit
      */
@@ -51,8 +50,8 @@ class BarcodeRenderer
 
     /**
      * The background and bars, in the element's own box and unit. The
-     * caption is not drawn here: SVG text support in the PDF engines is too
-     * thin to trust, so each renderer sets it as ordinary text.
+     * caption is not drawn here: SVG text support in PDF engines is too
+     * limited to rely on, so the caption is set as ordinary text instead.
      *
      * @param  array{modules: string, barHeight: float}  $layout
      * @param  array{r: int, g: int, b: int, a: float}  $foreground

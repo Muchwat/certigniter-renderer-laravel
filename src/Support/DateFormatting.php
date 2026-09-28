@@ -7,34 +7,31 @@ namespace Certigniter\CertificateRenderer\Support;
 use DateTimeInterface;
 
 /**
- * Translates a `CertificateProject::$dateFormat` value - a Dart/ICU-style
- * pattern (e.g. `'MMM d, yyyy'`), the same syntax Design Studio's date
- * format picker uses via `intl`'s `DateFormat` - into PHP's native
- * `date()` token syntax, so a host application can format a raw date the
- * same way the certificate's designer chose.
+ * Translates a `CertificateProject::$dateFormat` value, an ICU date
+ * pattern such as `'MMM d, yyyy'`, into PHP's `date()` format syntax, so
+ * the calling application can format a date exactly as the certificate's
+ * designer chose.
  *
- * `RecipientMerge::apply()` uses [tryFormat] automatically when given a
- * `CertificateProject`: a text-like element's own `properties['dateFormat']`
- * wins if set, else the project's own `$dateFormat` applies, and a raw
- * record value that doesn't parse as [DATE_TRANSPORT_FORMAT] (e.g. a name,
- * not a date) is left untouched. This lets two date elements on the same
- * certificate - Issue Date and Expiry Date, say - render in different
- * formats. A caller can still use [format] directly to pre-format a real
- * `DateTimeInterface` before building the recipient map, e.g.
- * `$recipient['Issue Date'] = DateFormatting::format($issuedAt, $project->dateFormat);`
+ * `RecipientMerge::apply()` uses {@see self::tryFormat()} automatically
+ * when given a `CertificateProject`: a text-like element's own
+ * `properties['dateFormat']` wins if set, otherwise the project's
+ * `$dateFormat` applies, and a recipient value that does not parse as
+ * {@see self::DATE_TRANSPORT_FORMAT} (a name, say) is left untouched. Two
+ * date elements on one certificate, such as Issue Date and Expiry Date,
+ * can therefore use different formats. To pre-format a
+ * `DateTimeInterface` yourself, call {@see self::format()}:
  *
- * Deliberately a small, hand-tested lookup table covering exactly the
- * preset list Design Studio's picker offers
- * (lib/utils/date_format_presets.dart), not a general ICU-to-PHP pattern
- * parser - the two token syntaxes don't map onto each other mechanically
- * (e.g. ICU `M` is a numeric month, PHP `M` is an abbreviated month name),
- * so translating an arbitrary pattern correctly would need real ICU-aware
- * parsing. A pattern outside this known set falls back to the default
- * rather than guessing at a translation that could silently be wrong.
+ *     $recipient['Issue Date'] = DateFormatting::format($issuedAt, $project->dateFormat);
+ *
+ * This is deliberately a small, tested lookup table of the supported
+ * patterns rather than a general ICU-to-PHP translator. The two syntaxes
+ * do not map onto each other mechanically (ICU `M` is a numeric month;
+ * PHP `M` is an abbreviated month name), so an unknown pattern falls back
+ * to the default rather than risk a translation that is silently wrong.
  */
 final class DateFormatting
 {
-    /** @var array<string, string> Dart/ICU pattern => PHP date() format */
+    /** @var array<string, string> ICU pattern => PHP date() format */
     private const ICU_TO_PHP = [
         'MMM d, yyyy' => 'M j, Y',
         'MMMM d, yyyy' => 'F j, Y',
@@ -48,31 +45,30 @@ final class DateFormatting
     public const DEFAULT_ICU_PATTERN = 'MMM d, yyyy';
 
     /**
-     * The canonical machine-readable format date-typed recipient values are
-     * expected to arrive in (matches Design Studio's spreadsheet export -
-     * see `date_format_presets.dart`'s `kDateTransportPattern`), decoupled
-     * from any display format so [tryFormat] can tell a real date apart
-     * from an ordinary string value.
+     * The machine-readable format (ISO 8601, `yyyy-MM-dd`) in which date
+     * values are expected to arrive in recipient data. It is independent of
+     * any display format, so {@see self::tryFormat()} can tell a real date
+     * apart from an ordinary string value.
      */
     public const DATE_TRANSPORT_FORMAT = 'Y-m-d';
 
-    /** The PHP `date()` format string equivalent to a Design Studio date-format pattern. */
+    /** The PHP `date()` format equivalent to a supported ICU pattern, or to the default pattern if it is not supported. */
     public static function toPhpFormat(string $icuPattern): string
     {
         return self::ICU_TO_PHP[$icuPattern] ?? self::ICU_TO_PHP[self::DEFAULT_ICU_PATTERN];
     }
 
-    /** Formats $date the same way Design Studio's date-format picker would for $icuPattern. */
+    /** Formats `$date` using the given ICU pattern. */
     public static function format(DateTimeInterface $date, string $icuPattern): string
     {
         return $date->format(self::toPhpFormat($icuPattern));
     }
 
     /**
-     * Parses $rawValue as [DATE_TRANSPORT_FORMAT] and re-renders it as
-     * $icuPattern, or returns null when $rawValue isn't a date at all (e.g.
-     * a non-date variable like a recipient's name) - callers should fall
-     * back to displaying $rawValue unchanged in that case.
+     * Parses `$rawValue` as {@see self::DATE_TRANSPORT_FORMAT} and
+     * re-renders it with `$icuPattern`. Returns null when `$rawValue` is not
+     * a date (a recipient's name, say); callers should then display
+     * `$rawValue` unchanged.
      */
     public static function tryFormat(string $rawValue, string $icuPattern): ?string
     {

@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Certigniter\CertificateRenderer\Support;
 
 /**
- * Converts the Studio's pixel-valued properties (QR `padding`, the barcode
- * caption, arrowheads and blur sizes, all 96-DPI CSS px in canvasRendering.js)
- * into a project's own unit.
+ * Converts the format's pixel-valued properties (QR `padding`, the barcode
+ * caption, arrowheads and blur sizes, all in 96-DPI CSS pixels) into a
+ * project's own unit.
  */
 class Units
 {
-    /** Studio px (1/96 in) in one of `$unit`. */
+    /** CSS pixels (1/96 in) in one of `$unit`. */
     public static function pixelsPer(string $unit): float
     {
         return match ($unit) {

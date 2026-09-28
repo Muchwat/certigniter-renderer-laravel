@@ -7,16 +7,18 @@ namespace Certigniter\CertificateRenderer\Support;
 use InvalidArgumentException;
 
 /**
- * A faithful PHP port of the `qrcode` npm package (1.5.4, lib/core) that the
- * web Studio draws QR codes with (canvasRendering.js's `qrMatrix()`), so the
- * same text gives the same symbol module for module, not merely an
- * equivalent one that scans the same. Stock PHP encoders disagree with it in
- * two visible ways: `qrcode` splits text into the cheapest mix of numeric,
- * alphanumeric and byte segments (which can pick a smaller version), and
- * its mask penalty scoring differs, so it often picks another mask.
+ * A QR Code Model 2 encoder (ISO/IEC 18004), written to produce a stable,
+ * reproducible symbol: the same text and error correction level always
+ * give the same module grid, not merely an equivalent one that scans the
+ * same.
  *
- * Kanji mode is left out, as in the Studio: `qrcode` only uses it when given
- * a Shift JIS converter, which the Studio never passes.
+ * Text is split into the cheapest mix of numeric, alphanumeric and byte
+ * segments, which can select a smaller version than a single-mode
+ * encoding, and the mask is chosen by the standard's four penalty rules.
+ * Kanji mode is not supported.
+ *
+ * The algorithm is derived from node-qrcode 1.5.4 (MIT licence, copyright
+ * Ryan Day).
  */
 class QrEncoder
 {
@@ -141,7 +143,7 @@ class QrEncoder
         return $rows;
     }
 
-    // Segments (segments.js)
+    // Segments
 
     /**
      * Numeric, alphanumeric and byte runs in string order, un-merged.
@@ -172,8 +174,8 @@ class QrEncoder
     }
 
     /**
-     * The cheapest mix of modes, found as `qrcode` finds it: a shortest path
-     * through every mode each run could take, costed in bits.
+     * The cheapest mix of modes: a shortest path through every mode each run
+     * could take, costed in bits.
      *
      * @return list<array{data: string, mode: string}>
      */
@@ -197,7 +199,8 @@ class QrEncoder
             };
         }
 
-        // buildGraph: the running `lastCount` is mutated while costing, exactly as segments.js does.
+        // The running `lastCount` carries over from node to node while costing. That decides
+        // between equally short segmentations, so changing it changes the symbol.
         $table = [];
         $graph = ['start' => []];
         $previousIds = ['start'];
@@ -245,8 +248,9 @@ class QrEncoder
     }
 
     /**
-     * dijkstrajs's find_path, including its naive priority queue: a stable
-     * sort by cost after every push, so ties resolve in push order.
+     * Dijkstra's shortest path. The priority queue is re-sorted, stably, by
+     * cost after every push, so ties always resolve in push order and the
+     * chosen segmentation is deterministic.
      *
      * @param  array<string, array<string, int>>  $graph
      * @return list<string>
@@ -295,7 +299,7 @@ class QrEncoder
         return self::CHAR_COUNT_BITS[$mode][$version < 10 ? 0 : ($version < 27 ? 1 : 2)];
     }
 
-    // Versions and capacity (version.js)
+    // Versions and capacity
 
     /** @param  list<array{data: string, mode: string}>  $segments */
     private static function bestVersion(array $segments, string $level): ?int
@@ -338,7 +342,7 @@ class QrEncoder
         return self::CODEWORDS_COUNT[$version] - self::EC_CODEWORDS_TABLE[($version - 1) * 4 + self::LEVEL_COLUMN[$level]];
     }
 
-    // Data and error correction (qrcode.js createData/createCodewords)
+    // Data and error correction
 
     /**
      * @param  list<array{data: string, mode: string}>  $segments
@@ -505,7 +509,7 @@ class QrEncoder
         return array_merge(array_fill(0, max(0, $degree - count($result)), 0), $result);
     }
 
-    // Function patterns and placement (qrcode.js setup*)
+    // Function patterns and placement
 
     private static function setupFinderPatterns(callable $set, int $size): void
     {
@@ -655,7 +659,7 @@ class QrEncoder
         }
     }
 
-    // Masks and penalties (mask-pattern.js)
+    // Masks and penalties
 
     private static function maskAt(int $pattern, int $i, int $j): bool
     {

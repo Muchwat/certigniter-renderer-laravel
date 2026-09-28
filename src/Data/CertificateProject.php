@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Certigniter\CertificateRenderer\Data;
 
 /**
- * A decoded (decrypted, JSON-parsed) .igniter project. Mirrors
- * lib/models/designer/certificate_project.dart's JSON shape - see this
- * package's README for the full field reference this was built against.
+ * A decoded (decrypted, JSON-parsed) .igniter project: the page size and
+ * unit, the flat list of design elements, and the project-wide settings
+ * that apply to all of them (colour format, embedded fonts, date format).
  */
 class CertificateProject
 {
@@ -44,12 +44,12 @@ class CertificateProject
             height: (float) ($size['height'] ?? 0),
             unit: (string) ($size['unit'] ?? 'mm'),
             elements: $elements,
-            // Absent on files predating Certigniter's css-hex migration -
-            // ColorConverter treats that as "still Flutter ARGB order".
+            // Files written before the CSS hex colour format was introduced
+            // omit this key; ColorConverter reads them as legacy AARRGGBB.
             colorFormat: (string) ($data['color_format'] ?? 'argb'),
             embeddedFonts: self::embeddedFontsFromArray($data['embedded_fonts'] ?? []),
-            // Absent on files predating this field - matches Design
-            // Studio's own de-facto default before the picker existed.
+            // Files written before a date format could be chosen omit this
+            // key; they were designed against this pattern.
             dateFormat: (string) ($data['date_format'] ?? 'MMM d, yyyy'),
         );
 
@@ -85,12 +85,12 @@ class CertificateProject
     }
 
     /**
-     * Certigniter migrates a legacy top-level `background` object into a
-     * synthetic full-bleed `image` element at render/load time rather than
-     * rewriting the file on disk (certificate_project.dart's
-     * migrateLegacyBackgroundToImageElement) - so both forms exist in the
-     * wild indefinitely. Do the same here so the rest of the renderer only
-     * ever has to deal with a flat element list.
+     * Older files store the page background as a top-level `background`
+     * object rather than as an element. Such files are never rewritten, so
+     * both forms remain valid indefinitely. The legacy form is converted
+     * here into a full-bleed `image` element placed beneath everything
+     * else, so the rest of the renderer only ever handles a flat element
+     * list.
      *
      * @param  DesignElement[]  $elements
      * @param  array<string, mixed>  $data
@@ -211,11 +211,10 @@ class CertificateProject
     }
 
     /**
-     * Known `placeholderRole` values (see Design Studio's ElementIconUtil,
-     * the other place this same set is enumerated) mapped to a human name.
-     * Checked before the plain type-based fallback below, so e.g. a
-     * signature image (type `image`, role `signature_image`) reads as
-     * "Signature", not "Image".
+     * Known `placeholderRole` values mapped to a human-readable name.
+     * Checked before the type-based fallback below, so e.g. a signature
+     * image (type `image`, role `signature_image`) reads as "Signature",
+     * not "Image".
      */
     private const ROLE_BASE_NAMES = [
         'static_text' => 'Text',
@@ -223,7 +222,7 @@ class CertificateProject
         'description' => 'Description',
         'issuer' => 'Issuer',
         'image' => 'Image',
-        'logo' => 'Logo', // Legacy role - see ElementIconUtil's comment.
+        'logo' => 'Logo', // Legacy role, still present in older files.
         'qrcode' => 'QR Code',
         'barcode' => 'Barcode',
         'dynamic_text' => 'Variable Text',
@@ -247,10 +246,10 @@ class CertificateProject
 
     /**
      * Every element's display label, keyed by id, computed in one pass over
-     * the whole project - mirrors Design Studio's own ElementLabelUtil
-     * (lib/utils/designer/element_label_util.dart) so a catalog built here
-     * reads the same as what the designer saw while building the template:
-     * a custom `properties['name']` wins; otherwise a known role/type gets
+     * the whole project, using the names the template's designer saw while
+     * building it: a custom `properties['name']` wins; a text element or a
+     * bound variable falls back to a preview of its content; otherwise a
+     * known role/type gets
      * a name that means something ("Signature", "Barcode", ...) instead of
      * a raw type string, numbered from the first occurrence ("Signature
      * 1", "Signature 2", ...) so repeats stay distinguishable. Anything
@@ -476,11 +475,12 @@ class CertificateProject
     }
 
     /**
-     * The element ID of this project's "Authentication link" QR code, if
-     * it has one (the Design Studio allows at most one per project). Null
-     * when the project has no such element. Use this to key the
-     * `$qrCodeOverrides` array passed to CertificateRenderer without the
-     * caller needing to already know the element's ID.
+     * The element ID of this project's "Verification link" QR code (a
+     * project holds at most one), or null when it has none. Use it to key
+     * the `$qrCodeOverrides` array passed to CertificateRenderer without
+     * knowing the element's ID in advance.
+     *
+     * @see self::verificationCodeElementIds() to include barcodes as well.
      */
     public function authenticationQrElementId(): ?string
     {
@@ -497,7 +497,7 @@ class CertificateProject
      * Element IDs of every "Verification link" QR code AND barcode in this
      * project, in canvas order. A project can carry one of each (e.g. a QR
      * encoding the verification URL beside a barcode encoding the same
-     * code), so a host application should key the same per-recipient value
+     * code), so the calling application should key the same per-recipient value
      * into `$qrCodeOverrides` for every ID returned here.
      *
      * @return string[]

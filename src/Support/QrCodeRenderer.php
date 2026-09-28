@@ -7,25 +7,22 @@ namespace Certigniter\CertificateRenderer\Support;
 use Certigniter\CertificateRenderer\Data\DesignElement;
 
 /**
- * Draws a QR code the way the web Studio does (canvasRendering.js's
- * `drawQr()`), as an SVG in the element's own box and unit:
+ * Draws a QR code element as an SVG in the element's own box and unit:
  *
  *  - a background square of the box's shorter side, centred in the box;
- *  - `padding` (Studio px, default 2) of quiet zone inside that square;
+ *  - `padding` (CSS pixels, default 2) of quiet zone inside that square;
  *  - square or round data modules (`dataModuleShape`) and finder eyes
- *    (`eyeShape`), which a stock QR library can't draw.
+ *    (`eyeShape`).
  *
- * `errorCorrectionLevel` is stored as the Dart `qr` package's
- * QrErrorCorrectLevel constant, which is not alphabetical: L=1, M=0, Q=3,
- * H=2 (igniterProject.js QR_LEVEL_TO_FLUTTER). A letter is accepted too, and
- * a missing level is L, as in the Studio.
+ * `errorCorrectionLevel` is stored as the level's two-bit format indicator
+ * from ISO/IEC 18004, which is not in alphabetical order: L=1, M=0, Q=3,
+ * H=2. A letter is accepted too, and a missing level means L.
  *
- * The symbol itself comes from QrEncoder, a port of the `qrcode` npm
- * package the Studio encodes with, so it is the same module grid.
+ * The module grid itself comes from QrEncoder.
  */
 class QrCodeRenderer
 {
-    private const LEVEL_FROM_FLUTTER = [1 => 'L', 0 => 'M', 3 => 'Q', 2 => 'H'];
+    private const LEVEL_FROM_INDICATOR = [1 => 'L', 0 => 'M', 3 => 'Q', 2 => 'H'];
 
     public static function levelLetter(mixed $level): string
     {
@@ -33,7 +30,7 @@ class QrCodeRenderer
             return strtoupper($level);
         }
 
-        return is_numeric($level) ? (self::LEVEL_FROM_FLUTTER[(int) $level] ?? 'L') : 'L';
+        return is_numeric($level) ? (self::LEVEL_FROM_INDICATOR[(int) $level] ?? 'L') : 'L';
     }
 
     /**
@@ -47,7 +44,7 @@ class QrCodeRenderer
     /**
      * @param  array{r: int, g: int, b: int, a: float}  $foreground
      * @param  array{r: int, g: int, b: int, a: float}  $background
-     * @param  float  $pixelsPerUnit  Studio px (1/96 in) in one of the project's units
+     * @param  float  $pixelsPerUnit  CSS pixels (1/96 in) in one of the project's units
      */
     public static function svg(DesignElement $element, string $data, array $foreground, array $background, float $pixelsPerUnit): string
     {
@@ -100,7 +97,7 @@ class QrCodeRenderer
         $eyeMarkup = '';
         foreach ($eyes as [$ex, $ey]) {
             if ($roundEyes) {
-                // Studio fills the ring between radii 3.5 and 2.5: a 1-wide stroke at radius 3.
+                // A round eye's ring spans radii 2.5 to 3.5: a 1-wide stroke at radius 3.
                 $eyeMarkup .= sprintf(
                     '<circle cx="%1$s" cy="%2$s" r="3" fill="none" stroke-width="1" %3$s /><circle cx="%1$s" cy="%2$s" r="1.5" />',
                     $ex + 3.5, $ey + 3.5, self::paint('stroke', $foreground),

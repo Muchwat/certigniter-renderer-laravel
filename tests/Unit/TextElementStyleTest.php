@@ -83,7 +83,7 @@ class TextElementStyleTest extends TestCase
         $this->assertSame([], $this->describe([])['shadowLayers']);
     }
 
-    public function test_an_unblurred_shadow_is_one_copy_moved_by_its_offset_in_studio_pixels(): void
+    public function test_an_unblurred_shadow_is_one_copy_moved_by_its_offset_in_css_pixels(): void
     {
         $layers = $this->describe(['shadow' => ['color' => '#112233', 'offsetX' => 3.0, 'offsetY' => -6.0, 'blur' => 0]])['shadowLayers'];
 
@@ -93,7 +93,7 @@ class TextElementStyleTest extends TestCase
         $this->assertSame('rgba(17, 34, 51, 1)', $layers[0]['color']);
     }
 
-    public function test_a_blurred_shadow_is_spread_over_faint_copies_in_the_studios_default_colour(): void
+    public function test_a_blurred_shadow_is_spread_over_faint_copies_in_the_default_colour(): void
     {
         $layers = $this->describe(['shadow' => ['offsetX' => 0, 'offsetY' => 0, 'blur' => 8.0]])['shadowLayers'];
 

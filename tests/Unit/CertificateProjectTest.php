@@ -62,7 +62,7 @@ class CertificateProjectTest extends TestCase
     public function test_date_format_defaults_when_absent(): void
     {
         // Every .igniter file saved before this field existed lacks the
-        // key entirely - matches Design Studio's own de-facto default.
+        // key entirely, and was designed against this pattern.
         $project = CertificateProject::fromArray($this->rawProject());
 
         $this->assertSame('MMM d, yyyy', $project->dateFormat);

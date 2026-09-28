@@ -8,10 +8,9 @@ use Certigniter\CertificateRenderer\Data\CertificateProject;
 use Certigniter\CertificateRenderer\Data\DesignElement;
 
 /**
- * Certigniter's bulk-CSV issuance (batch_pdf_generator.dart) uses two
+ * Merges one recipient record into a project. The format defines two
  * different, non-interchangeable merge mechanisms depending on element
- * type - replicate both exactly, since a template built for one will not
- * work through the other:
+ * type, and a template built for one will not work through the other:
  *
  *  - text / placeholder_text / dynamic_text: `variableName` triggers a
  *    WHOLE-FIELD replacement (the element's own `text` is discarded
@@ -24,22 +23,21 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
  *  - qrcode / barcode `data`: INLINE token substitution - every
  *    `{{ColumnName}}` and `<ColumnName>` occurrence in the string is
  *    replaced, for every column in the record, case-SENSITIVE (the token
- *    must match the CSV header exactly, after the header itself was already
- *    whitespace-normalized on parse). Whitespace just inside the delimiters
- *    is ignored, so `{{ ColumnName }}` - the form both Studio editors write -
- *    resolves the same as `{{ColumnName}}`. A token with no matching column
- *    is left in place.
+ *    must match the column name exactly). Whitespace just inside the
+ *    delimiters is ignored, so `{{ ColumnName }}`, the form templates
+ *    usually contain, resolves the same as `{{ColumnName}}`. A token with
+ *    no matching column is left in place.
  *
  * A qrcode OR barcode whose content source is "Dynamic value" (`qrType:
  * 'dynamic'`, see DesignElement::isDynamicCode()) is bound to one column via
  * `properties.variableName` and is resolved like a text element's
  * `variableName` instead: a WHOLE-FIELD replacement, matched
  * case-insensitively and trimmed - so a barcode can encode e.g. a
- * per-recipient certificate ID. The `{{ variableName }}` mirror both editors
- * also write into a dynamic QR's `data` is only used when `variableName`
- * itself is empty. "Verification link" codes (DesignElement::isVerificationCode())
- * have no recipient column at all - their payload comes from the renderer's
- * `qrCodeOverrides`.
+ * per-recipient certificate ID. The `{{ variableName }}` mirror that the
+ * format also writes into a dynamic QR's `data` is used only when
+ * `variableName` itself is empty. "Verification link" codes
+ * (DesignElement::isVerificationCode()) have no recipient column at all:
+ * their payload comes from the renderer's `qrCodeOverrides`.
  */
 class RecipientMerge
 {

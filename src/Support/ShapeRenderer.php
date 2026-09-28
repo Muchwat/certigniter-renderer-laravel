@@ -9,41 +9,32 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
 /**
  * Renders a `shape` element (rectangle/rounded-rectangle/ellipse/polygon
  * of three or more points, or a library shape - `path`, see
- * PathShapeGeometry) to an SVG data: URI, mirroring batch_pdf_generator.dart's `case
- * 'shape':` branch byte-for-byte in intent:
+ * PathShapeGeometry) to an SVG data: URI:
  *
  *  - The SVG is embedded as `<img src="data:image/svg+xml;base64,...">`,
- *    not inline `<svg>` markup in the HTML tree. Dompdf has no renderer
- *    for `<svg>` as an HTML element at all (confirmed against its source:
- *    `Svg\Document` is only ever reached from image loading, e.g.
- *    `Helpers::dompdf_getimagesize`/the image cache) - an inline `<svg>`
- *    tag silently paints nothing, verified by actually rasterizing a test
- *    PDF, not just checking it parses. Wrapping it as an image src is what
- *    makes dompdf's bundled php-svg-lib actually rasterize it.
+ *    not inline `<svg>` markup in the HTML tree. Dompdf renders SVG only
+ *    through its image loader (php-svg-lib); an inline `<svg>` element
+ *    silently paints nothing.
  *  - `fillEnabled`/`borderEnabled` (default true) drop the fill/stroke
- *    entirely rather than relying on a fully-transparent color, matching
- *    the desktop app's explicit "No Fill"/"No Border" toggles.
- *  - `borderStyle` (`solid`/`dashed`/`dotted`) uses the exact same dash/gap
- *    ratios as design_element.dart's `_ShapePainter._dashedPath` and
- *    batch_pdf_generator.dart, so the border reads identically across the
- *    Studio canvas, the Flutter-issued PDF, and this renderer.
+ *    entirely rather than relying on a fully transparent colour, so "No
+ *    fill" and "No border" leave nothing in the PDF.
+ *  - `borderStyle` (`solid`/`dashed`/`dotted`) sets dash and gap lengths
+ *    proportional to the stroke width, so the pattern keeps its rhythm at
+ *    any border thickness.
  *  - Corner radius is per-corner (`cornerRadiusTopLeft`/`TopRight`/
  *    `BottomRight`/`BottomLeft`), each falling back to the legacy uniform
  *    `cornerRadius` so pre-existing projects still render the same. A
  *    plain `<rect rx>` only takes one radius, so differing corners are
  *    emitted as a hand-built `<path>` with one arc per corner instead.
- *  - `stroke-linejoin` is always `miter` (SVG's own default). Certigniter
- *    used to hardcode `round` here, which visibly rounded off rectangle/
- *    polygon corners that were sharp in the Studio canvas - see the fix in
- *    batch_pdf_generator.dart for the same bug on the Flutter PDF side.
+ *  - `stroke-linejoin` is `miter` (SVG's default) for rectangles, ellipses
+ *    and polygons, so their sharp corners stay sharp.
  *  - A drop shadow (`shadowEnabled`) is drawn behind the shape in
  *    `shadowColor` (default black at 40%), filled whether or not the shape
- *    itself is, as the Studio fills it. Dompdf has no `box-shadow` or SVG
- *    `<filter>` support at all (confirmed against its source), so the
- *    Studio's blur (`shadowBlur`, default 3 mm) is approximated by faint
+ *    itself is. Dompdf has no `box-shadow` or SVG `<filter>` support at
+ *    all, so the blur (`shadowBlur`, default 3 mm) is approximated by faint
  *    copies spread over the same Gaussian (ShadowBlur). Because an SVG
  *    viewBox clips at its own edges, the shadow needs extra room beyond the
- *    shape's own element bounds; [width]/[height]/[offsetX]/[offsetY]
+ *    shape's own element bounds; `width`/`height`/`offsetX`/`offsetY`
  *    below describe that widened, re-anchored box for the caller to
  *    position instead of the element's raw x/y/width/height.
  *  - A `gradient` fill ({colors, angle}) on a rectangle, ellipse or polygon
@@ -94,9 +85,8 @@ class ShapeRenderer
             ? ColorConverter::toCss($element->property('strokeColor'), $colorFormat, '#000000')
             : 'none';
 
-        // Dash lengths mirror _ShapePainter._dashedPath / batch_pdf_generator.dart
-        // exactly. 'dotted' pairs a near-zero dash with a round cap so each
-        // dash paints as a round dot instead of a short line.
+        // Dash and gap lengths are multiples of the stroke width. 'dotted' pairs a
+        // near-zero dash with a round cap so each dash paints as a round dot.
         $dashArray = match ($borderStyle) {
             'dashed' => sprintf('%s %s', $strokeWidth * 2.5, $strokeWidth * 1.8),
             'dotted' => sprintf('0.01 %s', $strokeWidth * 2.2),
@@ -184,8 +174,8 @@ class ShapeRenderer
      * A library shape (`shapeType: 'path'`, see PathShapeGeometry): each part
      * is filled in its own `pathColors` entry and then stroked, in paint order,
      * so a later part covers an earlier one's border the way it covers its
-     * fill - the same order the Studio canvas draws. Joins are round, as the
-     * Studio draws them, so a thick border does not spike at sharp points.
+     * fill. Joins are round, so a thick border does not spike at sharp
+     * points.
      *
      * @return array{src: string, width: float, height: float, offsetX: float, offsetY: float}
      */
@@ -258,9 +248,8 @@ class ShapeRenderer
     }
 
     /**
-     * Any closed polygon from three points up - the Studio's drawing tools
-     * store triangles, n-gons and stars here, not just the four-sided shape
-     * the inspector originally edited.
+     * Any closed polygon of three or more points: triangles, n-gons and
+     * stars as well as four-sided shapes.
      *
      * @return list<array{float, float}>
      */
@@ -333,9 +322,8 @@ class ShapeRenderer
 
     /**
      * The element's ellipse, inset by half the stroke so the border stays
-     * inside the box - the same radii the Studio canvas draws with
-     * (canvasRendering.js's `context.ellipse`). An `<ellipse>` element rather
-     * than a pair of `A` arcs, which dompdf can flatten into chords.
+     * inside the box. Drawn as an `<ellipse>` element rather than a pair of
+     * `A` arcs, which dompdf can flatten into chords.
      */
     private static function ellipseMarkup(DesignElement $element, float $inset): string
     {
@@ -351,12 +339,8 @@ class ShapeRenderer
     /**
      * (topLeft, topRight, bottomRight, bottomLeft), each clamped
      * independently to half the shorter side - not scaled down together
-     * when adjacent radii don't fit. Mirrors the Studio editor's own
-     * per-corner clamp (design_element.dart's `_ShapePainter._cornerRadius`
-     * / the web Studio's `normalizedCornerRadii`), so what the designer
-     * sees while editing matches what gets rendered here: a proportional
-     * "shrink everything together" scale (the CSS border-radius rule this
-     * used to follow) made one corner's radius visibly affect the others.
+     * when adjacent radii don't fit, so one corner's radius never changes
+     * another's (unlike the proportional scaling of CSS `border-radius`).
      *
      * @return array{float, float, float, float}
      */
@@ -376,7 +360,7 @@ class ShapeRenderer
 
     /**
      * `strokeAlign` for a rectangle: 'inside' (the default), 'center' or
-     * 'outside'. Mirrors the Studio's strokeAlign() (canvasRendering.js).
+     * 'outside'. Anything else reads as 'inside'.
      */
     public static function strokeAlign(DesignElement $element): string
     {
@@ -388,7 +372,7 @@ class ShapeRenderer
     /**
      * The element's rounded rect, inset by `$inset` on every side (negative
      * grows it). Radii are clamped against the box shrunk by any positive
-     * inset, as the Studio does; a grown rect's rounded corners grow by the
+     * inset; a grown rect's rounded corners grow by the
      * same amount so an outside border stays concentric with the box's
      * corners, and square corners stay square.
      */
@@ -459,7 +443,7 @@ class ShapeRenderer
         return [max(0.0, $reach - $dx), max(0.0, $reach - $dy), max(0.0, $reach + $dx), max(0.0, $reach + $dy)];
     }
 
-    /** The Studio's shadow blur: CSS `blur()` of `shadowBlur / 2` (a standard deviation), default 3 mm. */
+    /** The shadow's Gaussian standard deviation: `shadowBlur / 2`, with `shadowBlur` defaulting to 3 mm. */
     private static function shadowSigma(DesignElement $element): float
     {
         return max(0.0, (float) $element->property('shadowBlur', 3)) / 2;
@@ -530,7 +514,7 @@ class ShapeRenderer
                 '<g %s %s><path d="%s" fill="none" %s%s />%s</g>',
                 self::paint('fill', $stroke), self::paint('stroke', $stroke), $path, $lineAttributes, $dashArray, $arrows,
             );
-            // The Studio strokes the shadow before setting the dash, so it is always solid.
+            // A connector's shadow is always solid, even when the connector itself is dashed.
             $shadowMarkup = self::shadowMarkup(
                 $element, $colorFormat,
                 sprintf('<path d="%s" fill="none" %s />%s', $path, $lineAttributes, $arrows),

@@ -7,11 +7,10 @@ namespace Certigniter\CertificateRenderer\Support;
 use RuntimeException;
 
 /**
- * AES-256-CBC (PKCS7) encrypt/decrypt matching Certigniter's own
- * lib/utils/designer/encryption_util.dart byte-for-byte: same envelope
- * shape (`{"iv": base64, "value": base64}`), same mode/padding, key used
- * as raw UTF-8 bytes (`Key.fromUtf8` on the Dart side - not derived via a
- * KDF, so it must be exactly 32 bytes to select AES-256).
+ * AES-256-CBC (PKCS#7 padding) encryption for the .igniter manifest. The
+ * envelope is JSON, `{"iv": base64, "value": base64}`. The key is used
+ * as its raw UTF-8 bytes rather than derived through a KDF, so it must be
+ * exactly 32 bytes long to select AES-256.
  *
  * This protects the `manifest.json` member inside a `.igniter` package, not
  * the package as a whole - images and fonts sit alongside it as plain

@@ -7,8 +7,7 @@ namespace Certigniter\CertificateRenderer\Support;
 use Certigniter\CertificateRenderer\Data\DesignElement;
 
 /**
- * Lines and arrows (`shapeType` `line` / `arrow`), laid out as the web Studio
- * lays them out (canvasRendering.js's `canvasShapeGeometry()`), in the
+ * Geometry for lines and arrows (`shapeType` `line` / `arrow`), in the
  * element's own box and unit:
  *
  *  - two stored `points` (fractions of the box) are the ends as they are;
@@ -33,7 +32,7 @@ class ConnectorGeometry
     }
 
     /**
-     * @param  float  $pixelsPerUnit  Studio px (1/96 in) in one of the project's units
+     * @param  float  $pixelsPerUnit  CSS pixels (1/96 in) in one of the project's units
      * @return array{points: list<array{float, float}>, arrows: list<list<array{float, float}>>}
      */
     public static function layout(DesignElement $element, float $pixelsPerUnit): array

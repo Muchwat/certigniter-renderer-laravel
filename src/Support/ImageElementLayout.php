@@ -8,9 +8,9 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
 
 /**
  * Computes an `image` element's fitted inner box (`fit: contain`/`cover`'s
- * aspect-ratio-preserving placement), its crop and its mask, as the Studio's
- * imagePlacement()/canvasImageMask() do - see TextElementStyle's docblock for
- * why this lives outside certificate.blade.php.
+ * aspect-ratio-preserving placement), its crop and its mask. Kept out of
+ * certificate.blade.php so the geometry is unit-testable without rendering
+ * a PDF.
  */
 class ImageElementLayout
 {
@@ -20,7 +20,6 @@ class ImageElementLayout
      * The element's non-destructive crop - `cropX`/`cropY`/`cropWidth`/
      * `cropHeight`, fractions (0-1) of the original picture - or null when it
      * has none: absent, partial, non-numeric, or covering the whole picture.
-     * Mirrors the Studio's imageCropRect() (resources/js/utils/imageCrop.js).
      *
      * @return array{x: float, y: float, width: float, height: float}|null
      */
@@ -95,9 +94,8 @@ class ImageElementLayout
 
         $boxRatio = $element->height > 0 ? $element->width / $element->height : null;
 
-        // Contain fits the picture's longer side to the box; cover (which the
-        // Studio's imagePlacement() draws too) fits its shorter side and lets
-        // the rest run past the box, which clips it.
+        // Contain fits the picture's longer side to the box; cover fits its
+        // shorter side and lets the rest run past the box, which clips it.
         if ($imageAspectRatio && $boxRatio && ($imageAspectRatio > $boxRatio) !== ($fit === 'cover')) {
             $width = $element->width;
             $height = $element->width / $imageAspectRatio;
@@ -120,8 +118,7 @@ class ImageElementLayout
     }
 
     /**
-     * The image's mask in its own box, as the Studio's canvasImageMask()
-     * works it out, or null for none (`maskEnabled: false`, or no or an
+     * The image's mask in its own box, or null for none (`maskEnabled: false`, or no or an
      * unknown `maskShape`): a circle of min(width, height) / 2 x
      * `maskRadiusFactor`, or a rounded rectangle of `maskWidthFactor` x
      * `maskHeightFactor` of the box (each clamped to 0.05-1) with corners of

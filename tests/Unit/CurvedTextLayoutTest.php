@@ -9,9 +9,8 @@ use Certigniter\CertificateRenderer\Support\CurvedTextLayout;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Same cases and expected numbers as the web Studio's curvedText.test.js
- * (certigniter-saas): "ABCD", every character 10 wide, on a circle of radius
- * 50 in a 60 x 30 box with 12-high line boxes.
+ * Fixed cases with known expected numbers: "ABCD", every character 10 wide,
+ * on a circle of radius 50 in a 60 x 30 box with 12-high line boxes.
  */
 class CurvedTextLayoutTest extends TestCase
 {

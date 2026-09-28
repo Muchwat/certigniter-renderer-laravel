@@ -90,9 +90,7 @@ class ShapeRendererTest extends TestCase
 
     public function test_oversized_corners_clamp_independently_without_affecting_the_others(): void
     {
-        // Matches the Studio editor's own per-corner clamp (the web Studio's
-        // normalizedCornerRadii and Flutter's _ShapePainter._cornerRadius):
-        // each corner is capped at half the shorter side on its own, rather
+        // Each corner is capped at half the shorter side on its own, rather
         // than scaling all four down together when one doesn't fit.
         $element = new DesignElement(
             id: 's', type: 'shape', x: 0, y: 0, width: 36.5, height: 36.5,
@@ -195,7 +193,7 @@ class ShapeRendererTest extends TestCase
         $this->assertStringContainsString('<polygon points="0,0 40,0 40,20 0,20" />', $svg);
     }
 
-    public function test_an_ellipse_is_inset_by_half_its_stroke_like_the_studio_canvas(): void
+    public function test_an_ellipse_is_inset_by_half_its_stroke(): void
     {
         $svg = $this->svgOf($this->rect(['shapeType' => 'ellipse', 'strokeWidth' => 2, 'strokeAlign' => 'outside']));
 
@@ -263,7 +261,7 @@ class ShapeRendererTest extends TestCase
         $this->assertStringContainsString('stroke-linejoin="round"', $svg);
     }
 
-    public function test_a_library_shape_leaves_out_parts_hidden_in_the_studio_layers_panel(): void
+    public function test_a_library_shape_leaves_out_hidden_parts(): void
     {
         $svg = $this->svgOf($this->rect([
             'shapeType' => 'path',
@@ -323,7 +321,7 @@ class ShapeRendererTest extends TestCase
         ]), 'css-hex');
         $svg = (string) base64_decode(substr($rendered['src'], strlen('data:image/svg+xml;base64,')));
 
-        // The Studio's blur is a Gaussian with a standard deviation of shadowBlur / 2.
+        // The blur is a Gaussian with a standard deviation of shadowBlur / 2.
         $reach = 2 * sqrt(-2 * log(1 / 8));
         $this->assertEqualsWithDelta(40 + 2 * $reach, $rendered['width'], 1e-9);
         $this->assertEqualsWithDelta(-$reach, $rendered['offsetX'], 1e-9);
@@ -333,7 +331,7 @@ class ShapeRendererTest extends TestCase
         $this->assertStringContainsString(sprintf('fill="#000000" fill-opacity="%s"', 1 - 0.6 ** (1 / 48)), $svg);
     }
 
-    public function test_a_shadow_without_a_colour_is_the_studios_translucent_black(): void
+    public function test_a_shadow_without_a_colour_is_translucent_black(): void
     {
         $svg = $this->svgOf($this->rect(['shadowEnabled' => true, 'shadowBlur' => 0]));
 

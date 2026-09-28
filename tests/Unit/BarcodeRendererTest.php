@@ -10,7 +10,7 @@ use Certigniter\CertificateRenderer\Support\Units;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Layout mirrors canvasRendering.js's drawBarcode(): bars stretched across
+ * Layout: bars stretched across
  * the whole box, a caption of min(10px, height / 3) along the bottom with
  * fontSize * 1.2 + 2px kept free for it, and none of that when `showText`
  * is false.
@@ -30,7 +30,7 @@ class BarcodeRendererTest extends TestCase
         ]);
     }
 
-    public function test_the_caption_takes_the_studios_share_of_the_box(): void
+    public function test_the_caption_takes_its_share_of_the_box(): void
     {
         $mm = Units::pixelsPer('mm');
         $layout = BarcodeRenderer::layout($this->barcode(50, 15), '123456789', $mm);
@@ -70,7 +70,7 @@ class BarcodeRendererTest extends TestCase
         $this->assertMatchesRegularExpression('/L 40 0 L 40 10 L [0-9.]+ 10 Z"/', $svg);
     }
 
-    public function test_an_empty_barcode_draws_the_studios_sample_for_its_type(): void
+    public function test_an_empty_barcode_draws_the_sample_for_its_type(): void
     {
         $this->assertSame('4006381333931', BarcodeRenderer::sampleData('ean13'));
         $this->assertSame('123456789', BarcodeRenderer::sampleData('something-else'));

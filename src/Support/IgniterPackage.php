@@ -28,7 +28,7 @@ use ZipArchive;
  * CertificateProject, FontRegistrar and the image pipeline see exactly the
  * shape they saw when projects carried their bytes inline.
  *
- * The reader is deliberately strict, because a host application will hand
+ * The reader is deliberately strict, because the calling application will hand
  * it files uploaded by its own users. It never extracts to disk, never
  * resolves a path or URL out of the project, and rejects anything outside
  * the layout above - see decode() and inspectEntries().
@@ -172,7 +172,7 @@ class IgniterPackage
 
         // Before 3.0 a .igniter was the bare AES envelope itself, with every
         // font and image inline as base64. Those files still exist in
-        // people\'s downloads folders and are the single most likely thing
+        // people's downloads folders and are the single most likely thing
         // to be uploaded here by mistake. Matched on the envelope's opening
         // key rather than by decoding it: a real one is megabytes of inline
         // base64, and the point is to name the format, not to read it.
@@ -196,8 +196,8 @@ class IgniterPackage
     /**
      * Walk only the known binary fields. Deliberately never resolves an
      * arbitrary project path or URL - the legacy `background` fields are
-     * here because desktop projects saved before backgrounds became real
-     * elements still carry them.
+     * here because projects saved before backgrounds became real elements
+     * still carry them.
      *
      * @param  array<string, mixed>  $project
      * @param  Closure(mixed, string): mixed  $transform

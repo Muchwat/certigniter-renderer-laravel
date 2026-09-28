@@ -8,19 +8,18 @@ use Certigniter\CertificateRenderer\Data\CertificateProject;
 use Certigniter\CertificateRenderer\Data\DesignElement;
 
 /**
- * A group's translate/resize are baked into its children's own x/y/width/
- * height at edit time, but its rotation and opacity are NOT - they're a
- * live parent transform that Certigniter's own canvas composes on every
- * frame (design_element.dart), by rotating each child's stored center
- * around the group's center. A renderer that just flat-renders every
- * element with its raw stored values will draw a rotated or
- * partially-transparent group's children in the wrong place / at the
- * wrong opacity.
+ * Resolves groups into a flat, render-ready element list.
  *
- * (Certigniter's own bulk-CSV-issuance pipeline - batch_pdf_generator.dart
- * - has a known bug where it skips this composition; set
- * config('certigniter.compose_group_transforms') to false only if you
- * specifically need byte-parity with PDFs that pipeline already issued.)
+ * A group's position and size are already baked into its children's own
+ * x/y/width/height, but its rotation and opacity are not: they are a
+ * parent transform, applied by rotating each child's stored centre around
+ * the group's centre and multiplying the opacities. Rendering children
+ * with their raw stored values would draw a rotated or translucent group's
+ * children in the wrong place or at the wrong opacity.
+ *
+ * Pass `$compose = false` (the `compose_group_transforms` config option)
+ * only when you must reproduce, exactly, PDFs issued by a tool that did
+ * not apply this composition.
  */
 class GroupComposer
 {

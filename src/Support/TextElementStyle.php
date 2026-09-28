@@ -9,12 +9,10 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
 
 /**
  * Computes every CSS value the Blade view needs to render a text-like
- * element (`text`/`placeholder_text`/`dynamic_text`), extracted verbatim
- * from what used to be an inline `@php` block in certificate.blade.php so
- * this branchy formatting logic (bold detection, shadow/gradient fallback,
- * content-alignment CSS, bottom-border CSS) is unit-testable on its own,
- * matching the existing `ShapeRenderer` pattern. Moved, not rewritten - see
- * this package's test suite for characterization coverage of every branch.
+ * element (`text`/`placeholder_text`/`dynamic_text`): bold detection,
+ * shadow and gradient fallback, content alignment and the bottom border.
+ * Kept out of certificate.blade.php so each branch is unit-testable
+ * without rendering a PDF.
  */
 class TextElementStyle
 {
@@ -26,16 +24,16 @@ class TextElementStyle
         $isBold = str_contains(strtolower($rawWeight), 'bold')
             || (is_numeric(str_replace('w', '', $rawWeight)) && (int) str_replace('w', '', $rawWeight) >= 600);
 
-        // Studio typography is stored as Flutter logical pixels (96 DPI);
-        // CSS PDF typography uses points (72 DPI).
+        // Typography is stored in CSS pixels (96 DPI); PDF typography uses
+        // points (72 DPI).
         $fontSizePt = (float) $element->property('fontSize', 14.0) * CertificateRenderer::CANVAS_PX_TO_PDF_PT;
 
-        // Dompdf's tableless line box places the glyph baseline lower than
-        // package:pdf by a fraction of the font size that depends on the
+        // Dompdf's line box places the glyph baseline lower than the glyphs'
+        // visual centre by a fraction of the font size that depends on the
         // font's own ascent/descent split - see
         // FontRegistrar::baselineCorrectionRatio() for why this isn't a
-        // flat constant. Compensate inside the element box so both
-        // renderers share the same visual vertical center.
+        // flat constant. Compensate inside the element box so the text sits
+        // where it was placed.
         $baselineCorrectionPt = $fontSizePt * $fonts->baselineCorrectionRatio($fontFamily);
 
         $color = ColorConverter::toCss($element->property('color'), $colorFormat, '#000000');
@@ -58,8 +56,8 @@ class TextElementStyle
 
         // A text shadow is drawn as copies of the text behind it (dompdf
         // ignores CSS text-shadow): moved by its offset and spread over its
-        // blur (ShadowBlur), all in Studio px - a canvas shadowBlur of b is a
-        // Gaussian of standard deviation b / 2.
+        // blur (ShadowBlur), all in CSS pixels - a blur of b is a Gaussian
+        // of standard deviation b / 2.
         $shadowLayers = [];
         $shadow = $element->property('shadow');
         if (is_array($shadow)) {

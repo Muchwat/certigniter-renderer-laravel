@@ -7,27 +7,28 @@ namespace Certigniter\CertificateRenderer\Support;
 use InvalidArgumentException;
 
 /**
- * A faithful PHP port of the JsBarcode 3.12 encoders the web Studio draws
- * barcodes with (canvasRendering.js's `barcodeEncoding()`: `margin: 0`,
- * `displayValue: true`), so a certificate's bars are module-for-module the
- * ones the designer saw: the same Code 128 code-set switching, the same
- * EAN-13/UPC-A quiet zones JsBarcode adds for its caption digits, the same
- * wide-bar ratio for ITF and the same Codabar start/stop handling. A generic
- * barcode library (picqer) disagrees with JsBarcode on all of those, which
- * changes the bar widths and positions on the page.
+ * Encodes a value as a one-dimensional barcode in any of the supported
+ * symbologies: Code 128 (with automatic code-set selection), Code 39,
+ * EAN-13, EAN-8, UPC-A, ITF and Codabar. Encoding is deterministic, so the
+ * same value and symbology always produce the same bars, with no outer
+ * margin and with room kept for the human-readable caption (EAN-13 and
+ * UPC-A reserve blank modules for their outer caption digits).
  *
  * Each result is the whole symbol as a string of modules ('1' = bar,
- * '0' = space) plus the caption Studio paints under it.
+ * '0' = space) plus the caption to print beneath it.
+ *
+ * The encoding rules are derived from JsBarcode 3.12 (MIT licence,
+ * copyright Johan Lindell).
  */
 class BarcodeEncoding
 {
-    /** Studio's `barcodeType` values. */
+    /** The supported `barcodeType` values. */
     public const TYPES = ['code128', 'code39', 'ean13', 'ean8', 'upcA', 'itf', 'codabar'];
 
     /**
      * @return array{modules: string, text: string}
      *
-     * @throws InvalidArgumentException when the value can't be encoded in that symbology, as JsBarcode throws
+     * @throws InvalidArgumentException when the value cannot be encoded in that symbology
      */
     public static function encode(string $data, string $barcodeType): array
     {
@@ -75,7 +76,9 @@ class BarcodeEncoding
     private const SET_C = 2;
 
     /**
-     * JsBarcode's CODE128 auto mode: auto.js picks the code sets, CODE128.js encodes them.
+     * Code 128 with automatic code-set selection: set C for runs of paired
+     * digits, otherwise whichever of sets A and B covers more of what
+     * follows, with a SHIFT in place of a switch for a single character.
      *
      * @return array{modules: string, text: string}
      */
@@ -176,7 +179,7 @@ class BarcodeEncoding
         return $cMatch.chr($isA ? 206 : 205).self::code128FromAB($string, $isA);
     }
 
-    /** The longest run of `$pattern` at the start of `$string` (JavaScript's `^pattern*`). */
+    /** The longest run of `$pattern` at the start of `$string` (the regular expression `^pattern*`). */
     private static function leading(string $pattern, string $string): string
     {
         return preg_match('/^'.$pattern.'*/', $string, $match) === 1 ? $match[0] : '';
@@ -248,7 +251,7 @@ class BarcodeEncoding
         }
 
         return [
-            // 12 blank modules on the left: the room JsBarcode leaves for the first digit.
+            // 12 blank modules on the left: room for the caption's leading digit.
             'modules' => '000000000000101'
                 .self::eanDigits(substr($data, 1, 6), self::EAN13_STRUCTURE[(int) $data[0]])
                 .'01010'
@@ -285,7 +288,7 @@ class BarcodeEncoding
         }
 
         return [
-            // 8 blank modules either side: the room JsBarcode leaves for the outer digits.
+            // 8 blank modules either side: room for the caption's outer digits.
             'modules' => '00000000101'
                 .self::eanDigits(substr($data, 0, 6), 'LLLLLL')
                 .'01010'

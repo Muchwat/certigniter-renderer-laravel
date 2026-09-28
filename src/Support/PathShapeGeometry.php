@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Certigniter\CertificateRenderer\Support;
 
 /**
- * Geometry for a library shape (`shapeType: 'path'`) - a port of the web
- * Studio's `pathShapeOutlines()` (certigniter-saas resources/js/utils/
- * shapePaths.js), which is the reference: keep the two in step.
+ * Geometry for a library shape (`shapeType: 'path'`).
  *
  * A path shape stores `pathParts` (`d` in absolute M/L/C/Z over the 0..1
  * box, plus a `color` index and an optional `rule`) and `pathColors`. Each
@@ -21,13 +19,12 @@ final class PathShapeGeometry
     private const CORNER_DEGREES = 12;
 
     /**
-     * The parts to draw: all but those the Studio's Layers panel has hidden -
-     * `hidden: true` on the part itself, or on any vector group it sits in
+     * The parts to draw: every part except hidden ones, meaning
+     * `hidden: true` on the part itself or on any vector group it sits in
      * (`pathGroups`, each `{id, parent?, hidden?}`, and the part's innermost
-     * `group`; certigniter-saas resources/js/utils/vectorGroups.js). Groups
-     * are editor structure only: the parts stay one flat list in paint order.
-     * `outlines()` itself stays unfiltered, like the Studio's reference, so a
-     * part's index always means the same outline.
+     * `group`). Groups only organise the parts; the parts stay one flat list
+     * in paint order. `outlines()` itself stays unfiltered, so a part's
+     * index always refers to the same outline.
      *
      * @param  array<int, mixed>  $parts
      * @param  array<int, mixed>  $groups

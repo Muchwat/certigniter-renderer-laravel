@@ -11,11 +11,11 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * The web Studio draws QR codes with the `qrcode` npm package and barcodes
- * with JsBarcode. tests/Fixtures/studio-codes.json holds their output for a
- * spread of inputs (its `generator` key says exactly how it was made); the
- * PHP ports must reproduce it module for module, or a certificate's code
- * would not be the one the designer saw.
+ * Golden-output tests for QrEncoder and BarcodeEncoding.
+ * tests/Fixtures/studio-codes.json holds reference symbols for a spread of
+ * inputs, produced by the reference encoders the algorithms derive from (its
+ * `generator` key records exactly how). Both encoders must reproduce every
+ * symbol module for module, so a given value always prints the same code.
  */
 class StudioCodeParityTest extends TestCase
 {
@@ -43,7 +43,7 @@ class StudioCodeParityTest extends TestCase
 
     /** @param  list<string>  $rows */
     #[DataProvider('qrCases')]
-    public function test_a_qr_code_is_the_studios_symbol_module_for_module(string $data, string $level, array $rows): void
+    public function test_a_qr_code_matches_its_reference_symbol_module_for_module(string $data, string $level, array $rows): void
     {
         $matrix = array_map(
             fn (array $row): string => implode('', array_map(fn (bool $dark): string => $dark ? '1' : '0', $row)),
@@ -54,19 +54,19 @@ class StudioCodeParityTest extends TestCase
     }
 
     #[DataProvider('barcodeCases')]
-    public function test_a_barcode_is_the_studios_symbol_module_for_module(string $type, string $data, string $modules, string $text): void
+    public function test_a_barcode_matches_its_reference_symbol_module_for_module(string $type, string $data, string $modules, string $text): void
     {
         $this->assertSame(['modules' => $modules, 'text' => $text], BarcodeEncoding::encode($data, $type));
     }
 
-    public function test_a_value_its_symbology_cannot_carry_is_rejected_as_jsbarcode_rejects_it(): void
+    public function test_a_value_its_symbology_cannot_carry_is_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
 
         BarcodeEncoding::encode('4006381333932', 'ean13');
     }
 
-    public function test_an_unknown_barcode_type_is_rejected_as_the_studio_rejects_it(): void
+    public function test_an_unknown_barcode_type_is_rejected(): void
     {
         $this->expectException(InvalidArgumentException::class);
 

@@ -34,7 +34,7 @@ class DateFormattingTest extends TestCase
     }
 
     #[DataProvider('knownPatternProvider')]
-    public function test_each_known_design_studio_pattern_formats_as_expected(string $icuPattern, string $expected): void
+    public function test_each_supported_pattern_formats_as_expected(string $icuPattern, string $expected): void
     {
         $this->assertSame($expected, DateFormatting::format($this->sampleDate(), $icuPattern));
     }

@@ -119,7 +119,7 @@ class IgniterPackageTest extends TestCase
         $this->assertSame(base64_encode($bold), $project['embedded_fonts']['Old English Text MT']['bold']);
     }
 
-    /** Desktop projects saved before backgrounds became real elements still carry these. */
+    /** Projects saved before backgrounds became real elements still carry these. */
     public function test_decode_resolves_a_legacy_background_image_reference(): void
     {
         $bytes = random_bytes(32);

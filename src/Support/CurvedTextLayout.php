@@ -7,9 +7,7 @@ namespace Certigniter\CertificateRenderer\Support;
 use Certigniter\CertificateRenderer\Data\DesignElement;
 
 /**
- * Text on a curve - a port of the web Studio's curvedText.js
- * (certigniter-saas resources/js/utils/curvedText.js), which is the
- * reference: keep the two in step. They share test cases.
+ * Lays out text on a circular arc.
  *
  * A text element's `curveRadius` is the signed radius, in mm, of the circle
  * the middle of its line box follows: positive arches the text over the top

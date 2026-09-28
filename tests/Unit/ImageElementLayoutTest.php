@@ -107,7 +107,7 @@ class ImageElementLayoutTest extends TestCase
         $this->assertSame(['shape' => 'circle', 'left' => 10.0, 'top' => 0.0, 'width' => 20.0, 'height' => 20.0, 'radius' => 10.0], $mask);
     }
 
-    public function test_a_circle_mask_shrinks_by_its_radius_factor_clamped_to_the_studios_range(): void
+    public function test_a_circle_mask_shrinks_by_its_radius_factor_clamped_to_its_range(): void
     {
         $this->assertEqualsWithDelta(5.0, $this->maskOf($this->sized(40, 20, ['maskShape' => 'circle', 'maskRadiusFactor' => 0.5]))['radius'], 1e-9);
         $this->assertEqualsWithDelta(0.5, $this->maskOf($this->sized(40, 20, ['maskShape' => 'circle', 'maskRadiusFactor' => 0.0]))['radius'], 1e-9);

@@ -160,14 +160,10 @@ class FontRegistrarTest extends TestCase
     public function test_baseline_correction_ratio_for_metrics_reproduces_the_measured_old_english_text_mt_correction(): void
     {
         // Real hhea ascent/descent for Old English Text MT (1764/-284 at
-        // 2048 units/em), the font that surfaced this bug: the title and
-        // recipient-name elements of a real production certificate
-        // (Strathmore CIPIT template) rendered visibly higher on the page
-        // in the dompdf output than in Flutter's, by an amount matching
-        // this exact font at two different sizes (measured via pdftotext
-        // -bbox on both PDFs: ~5.46pt off at 48pt, ~3.76pt off at 33pt,
-        // both converging to a ~-0.0263 correction ratio instead of the
-        // legacy flat +0.0875).
+        // 2048 units/em). With the flat +0.0875 correction, text in this
+        // face sat visibly off its designed position: ~5.46pt at 48pt and
+        // ~3.76pt at 33pt (measured with pdftotext -bbox), both of which
+        // converge on a ~-0.0263 correction ratio.
         $ratio = FontRegistrar::baselineCorrectionRatioForMetrics([
             'ascent' => 1764 / 2048,
             'descent' => 284 / 2048,

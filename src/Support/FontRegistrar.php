@@ -19,22 +19,14 @@ use FontLib\Font;
  * self-contained: whether a family renders depends on the file, not on what
  * the machine doing the rendering happens to have installed next to it.
  *
- * It used to work the other way around: Certigniter kept a list of families
- * it bundled on both sides and left their bytes out of the file to keep it
- * small. That coupling broke quietly whenever the two lists drifted - a
- * family the designer had and this package didn't rendered as the fallback
- * with the file still perfectly valid - and the saving it bought disappeared
- * once fonts moved into the ZIP as compressed binary members instead of
- * base64 inside the encrypted manifest.
- *
- * [FALLBACK_FAMILY] covers what remains genuinely unresolvable: a family a
+ * {@see self::FALLBACK_FAMILY} covers what remains unresolvable: a family a
  * project names but carries no bytes for. It is Dompdf's own bundled DejaVu
  * Sans, so the fallback costs this package nothing to ship and is always
  * available.
  *
- * A variant map may legitimately carry only `normal`: Certigniter drops a
- * `bold` that is byte-identical to it (a system font is located as a single
- * file, and a variable font's two cuts are the same bytes). Both weights are
+ * A variant map may legitimately carry only `normal`: a `bold` variant
+ * byte-identical to `normal` is omitted (a single-file system font, or a
+ * variable font whose two cuts are the same bytes). Both weights are
  * still registered, from the one payload, so Dompdf emboldens synthetically
  * rather than falling through to the fallback.
  */
@@ -188,27 +180,20 @@ class FontRegistrar
     }
 
     /**
-     * How much to shift a text box's vertical centering to compensate for
-     * dompdf's CSS line-box (built from the font's own fixed ascent/descent)
-     * centering text differently than package:pdf's tight-ink-bbox centering
-     * does - see TextElementStyle's use of this and
-     * batch_pdf_generator.dart's `_textBaselineCorrectionFactor` doc comment
-     * for the Flutter side of the same problem.
+     * How much to shift a text box's vertical centring, as a fraction of
+     * the font size. Dompdf centres a CSS line box built from the font's
+     * fixed ascent and descent, which sits text lower than centring on the
+     * glyphs themselves would; TextElementStyle applies this correction.
      *
-     * A flat ratio (the previous implementation) only holds for fonts whose
-     * ascent/descent split resembles whatever font it was tuned against -
-     * it drifts badly for fonts with an unusual split, e.g. a blackletter
-     * face's tall, shallow-descender letterforms. This scales the
-     * correction by how far the resolved font's own real ascent/descent
-     * split (read from its TTF `hhea` table) deviates from Roboto's, using
-     * a slope fit from two real measurements: Roboto/AlbertSans-Regular
-     * (ascent ratio ~0.7917, matches the legacy flat 0.0875) and Old
-     * English Text MT (ascent ratio ~0.8613, needs ~-0.0263) - see
-     * FontRegistrarTest and CHANGELOG.md for the derivation. It's a
-     * measured fit, not a closed-form formula - package:pdf's own
-     * correction is itself a single flat, font-agnostic constant, so there
-     * is no exact target to solve for; this meaningfully narrows the gap
-     * for unusual fonts while leaving "normal" ones unchanged.
+     * The correction depends on the font's ascent/descent split (read from
+     * its TTF `hhea` table): a flat ratio drifts badly for faces with an
+     * unusual split, such as a blackletter's tall ascenders and shallow
+     * descenders. It is a linear fit through two measured fonts, a
+     * Roboto-like sans (ascent ratio ~0.7917, correction 0.0875) and Old
+     * English Text MT (ascent ratio ~0.8613, correction ~-0.0263), so fonts
+     * with a typical split get the reference correction and unusual ones
+     * are pulled towards their measured position. FontRegistrarTest pins
+     * both points.
      */
     public function baselineCorrectionRatio(string $resolvedFamily): float
     {

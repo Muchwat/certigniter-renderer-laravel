@@ -33,7 +33,7 @@
                centered (left: 50%) title therefore saw only half of its
                element width and wrapped. Table layout shrink-wraps to the
                text's intrinsic width before the positioning transform is
-               applied, matching Flutter's aligned RenderParagraph. */
+               applied, so aligned text is placed by its real width. */
             display: table;
             box-sizing: border-box;
             max-width: 100%;
@@ -111,7 +111,7 @@
                         {{ $text['decorationCss'] }}
                         {{ $text['overflowCss'] }}">
                     @foreach ($text['shadowLayers'] as $layer)
-                        {{-- The Studio shadows the text and its underline, not the bottom border, whose padding still places the text. --}}
+                        {{-- The shadow covers the text and its underline, not the bottom border, whose padding still places the text. --}}
                         <div style="position: absolute; left: {{ $layer['dx'] }}{{ $unit }}; top: {{ $layer['dy'] }}{{ $unit }}; width: 100%; height: 100%; color: {{ $layer['color'] }};">
                             <div class="text-content" style="{{ $text['contentPositionCss'] }} margin-top: -{{ $text['baselineCorrectionPt'] }}pt;"><span style="{{ $text['bottomBorderSpanCss'] }}{{ $text['bottomBorderSpanCss'] !== '' ? ' border-bottom-color: transparent;' : '' }}">{!! nl2br(e((string) $element->property('text', ''))) !!}</span></div>
                         </div>
@@ -145,7 +145,7 @@
                         $fitted = \Certigniter\CertificateRenderer\Support\ImageElementLayout::fit($element, $image['aspectRatio']);
                         $cropped = \Certigniter\CertificateRenderer\Support\ImageElementLayout::cropPlacement($element, $fitted);
                     @endphp
-                    {{-- The Studio clips a picture to its box (a cover fit runs past it), then to its mask. --}}
+                    {{-- A picture is clipped to its box (a cover fit runs past it), then to its mask. --}}
                     <div class="element" style="{{ $wrapperStyle }} overflow: hidden;">
                         @if ($mask)
                             <div style="position: absolute; overflow: hidden; left: {{ $mask['left'] }}{{ $unit }}; top: {{ $mask['top'] }}{{ $unit }}; width: {{ $mask['width'] }}{{ $unit }}; height: {{ $mask['height'] }}{{ $unit }}; border-radius: {{ $mask['radius'] }}{{ $unit }};">
@@ -172,7 +172,7 @@
                 <div class="element" style="{{ $wrapperStyle }}">
                     <img src="{{ $code['src'] }}" style="position: absolute; left: 0; top: 0; width: {{ $element->width }}{{ $unit }}; height: {{ $element->height }}{{ $unit }};">
                     @if ($code['caption'] !== null)
-                        {{-- The Studio sets the caption with its em box's bottom on the box's bottom edge (textBaseline 'bottom'). --}}
+                        {{-- The caption's em box sits with its bottom on the box's bottom edge. --}}
                         <div style="position: absolute; left: 0; bottom: 0; width: {{ $element->width }}{{ $unit }}; text-align: center; white-space: nowrap; font-family: '{{ $fonts->resolveFamily('Roboto') }}'; font-weight: 400; font-size: {{ $code['fontSize'] }}{{ $unit }}; line-height: {{ $code['fontSize'] }}{{ $unit }}; color: {{ $code['color'] }};">{{ $code['caption'] }}</div>
                     @endif
                 </div>

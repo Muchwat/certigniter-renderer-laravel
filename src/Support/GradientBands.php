@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace Certigniter\CertificateRenderer\Support;
 
 /**
- * A shape's linear `gradient` fill ({colors, angle}), as the web Studio
- * paints it (canvasRendering.js's `paint()` with studioRendering.js's
- * `gradientEndpoints()`): evenly spaced stops along the line from
+ * A shape's linear `gradient` fill ({colors, angle}): evenly spaced stops
+ * along the line from
  * ((1 + cos a) / 2, (1 + sin a) / 2) to ((1 - cos a) / 2, (1 - sin a) / 2) of
  * the box, with the end colours carried on past both ends.
  *
@@ -21,8 +20,9 @@ namespace Certigniter\CertificateRenderer\Support;
 class GradientBands
 {
     /**
-     * Whether `$gradient` is a real gradient; the Studio fills with its only
-     * colour, or the flat fill colour, otherwise.
+     * Whether `$gradient` is a real gradient (two or more colours). With
+     * fewer, the shape is filled with its single colour, or with the flat
+     * fill colour.
      */
     public static function applies(mixed $gradient): bool
     {
