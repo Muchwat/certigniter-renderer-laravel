@@ -73,7 +73,31 @@
                     $text = \Certigniter\CertificateRenderer\Support\TextElementStyle::describe(
                         $element, $project->colorFormat, $unit, $fonts,
                     );
+                    $curvedGlyphs = \Certigniter\CertificateRenderer\Support\TextElementStyle::curvedGlyphBoxes($element, $text, $fonts);
                 @endphp
+                @if ($curvedGlyphs !== [])
+                {{-- Text on a curve: each glyph its own line box, turned onto the circle. No decoration or bottom border. --}}
+                <div class="element text-element"
+                    style="{{ $wrapperStyle }}
+                        font-family: '{{ $text['fontFamily'] }}';
+                        font-size: {{ $text['fontSizePt'] }}pt;
+                        font-weight: {{ $text['fontWeight'] }};
+                        font-style: {{ $text['fontStyle'] }};
+                        color: {{ $text['color'] }};
+                        line-height: {{ $text['lineHeightPt'] }}pt;
+                        ">
+                    @foreach ($text['shadowLayers'] as $layer)
+                        <div style="position: absolute; left: {{ $layer['dx'] }}{{ $unit }}; top: {{ $layer['dy'] }}{{ $unit }}; width: 100%; height: 100%; color: {{ $layer['color'] }};">
+                            @foreach ($curvedGlyphs as $glyph)
+                                <div style="position: absolute; left: {{ $glyph['left'] }}mm; top: {{ $glyph['top'] }}mm; width: {{ $glyph['width'] }}mm; height: {{ $glyph['height'] }}mm; white-space: nowrap; transform: rotate({{ $glyph['rotation'] }}deg); transform-origin: center;">{{ $glyph['text'] }}</div>
+                            @endforeach
+                        </div>
+                    @endforeach
+                    @foreach ($curvedGlyphs as $glyph)
+                        <div style="position: absolute; left: {{ $glyph['left'] }}mm; top: {{ $glyph['top'] }}mm; width: {{ $glyph['width'] }}mm; height: {{ $glyph['height'] }}mm; white-space: nowrap; transform: rotate({{ $glyph['rotation'] }}deg); transform-origin: center;">{{ $glyph['text'] }}</div>
+                    @endforeach
+                </div>
+                @else
                 <div class="element text-element"
                     style="{{ $wrapperStyle }}
                         font-family: '{{ $text['fontFamily'] }}';
@@ -85,13 +109,19 @@
                         line-height: {{ $text['lineHeightPt'] }}pt;
                         letter-spacing: {{ $text['letterSpacing'] }}pt;
                         {{ $text['decorationCss'] }}
-                        {{ $text['shadowCss'] }}
                         {{ $text['overflowCss'] }}">
+                    @foreach ($text['shadowLayers'] as $layer)
+                        {{-- The Studio shadows the text and its underline, not the bottom border, whose padding still places the text. --}}
+                        <div style="position: absolute; left: {{ $layer['dx'] }}{{ $unit }}; top: {{ $layer['dy'] }}{{ $unit }}; width: 100%; height: 100%; color: {{ $layer['color'] }};">
+                            <div class="text-content" style="{{ $text['contentPositionCss'] }} margin-top: -{{ $text['baselineCorrectionPt'] }}pt;"><span style="{{ $text['bottomBorderSpanCss'] }}{{ $text['bottomBorderSpanCss'] !== '' ? ' border-bottom-color: transparent;' : '' }}">{!! nl2br(e((string) $element->property('text', ''))) !!}</span></div>
+                        </div>
+                    @endforeach
                     <div class="text-content" style="{{ $text['contentPositionCss'] }} margin-top: -{{ $text['baselineCorrectionPt'] }}pt;"><span style="{{ $text['bottomBorderSpanCss'] }}">{!! nl2br(e((string) $element->property('text', ''))) !!}</span></div>
                 </div>
+                @endif
             @elseif ($element->type === 'shape')
                 @php
-                    $shape = \Certigniter\CertificateRenderer\Support\ShapeRenderer::render($element, $project->colorFormat);
+                    $shape = \Certigniter\CertificateRenderer\Support\ShapeRenderer::render($element, $project->colorFormat, \Certigniter\CertificateRenderer\Support\Units::pixelsPer($unit));
                     // A shadow can need room beyond the element's own raw
                     // bounds (see ShapeRenderer) - offsetX/offsetY (zero, or
                     // negative) re-anchor the wrapper so the shape itself
@@ -108,20 +138,44 @@
             @elseif ($element->type === 'image' && (!empty($element->property('imageData')) || !empty($element->property('path'))))
                 @php
                     $image = $imageSources[$element->id] ?? null;
-                    $maskStyle = \Certigniter\CertificateRenderer\Support\ImageElementLayout::maskCss($element, $unit);
+                    $mask = \Certigniter\CertificateRenderer\Support\ImageElementLayout::mask($element);
                 @endphp
                 @if ($image)
                     @php
                         $fitted = \Certigniter\CertificateRenderer\Support\ImageElementLayout::fit($element, $image['aspectRatio']);
+                        $cropped = \Certigniter\CertificateRenderer\Support\ImageElementLayout::cropPlacement($element, $fitted);
                     @endphp
-                    <div class="element" style="{{ $wrapperStyle }}{{ $maskStyle }}">
-                        <img src="{{ $image['src'] }}" style="position: absolute; left: {{ $fitted['left'] }}{{ $unit }}; top: {{ $fitted['top'] }}{{ $unit }}; width: {{ $fitted['width'] }}{{ $unit }}; height: {{ $fitted['height'] }}{{ $unit }};">
+                    {{-- The Studio clips a picture to its box (a cover fit runs past it), then to its mask. --}}
+                    <div class="element" style="{{ $wrapperStyle }} overflow: hidden;">
+                        @if ($mask)
+                            <div style="position: absolute; overflow: hidden; left: {{ $mask['left'] }}{{ $unit }}; top: {{ $mask['top'] }}{{ $unit }}; width: {{ $mask['width'] }}{{ $unit }}; height: {{ $mask['height'] }}{{ $unit }}; border-radius: {{ $mask['radius'] }}{{ $unit }};">
+                            <div style="position: absolute; left: {{ -$mask['left'] }}{{ $unit }}; top: {{ -$mask['top'] }}{{ $unit }}; width: {{ $element->width }}{{ $unit }}; height: {{ $element->height }}{{ $unit }};">
+                        @endif
+                        @if ($cropped)
+                            {{-- The whole picture, offset inside a box that clips it to the crop. --}}
+                            <div style="position: absolute; overflow: hidden; left: {{ $fitted['left'] }}{{ $unit }}; top: {{ $fitted['top'] }}{{ $unit }}; width: {{ $fitted['width'] }}{{ $unit }}; height: {{ $fitted['height'] }}{{ $unit }};">
+                                <img src="{{ $image['src'] }}" style="position: absolute; max-width: none; left: {{ $cropped['left'] }}{{ $unit }}; top: {{ $cropped['top'] }}{{ $unit }}; width: {{ $cropped['width'] }}{{ $unit }}; height: {{ $cropped['height'] }}{{ $unit }};">
+                            </div>
+                        @else
+                            <img src="{{ $image['src'] }}" style="position: absolute; max-width: none; left: {{ $fitted['left'] }}{{ $unit }}; top: {{ $fitted['top'] }}{{ $unit }}; width: {{ $fitted['width'] }}{{ $unit }}; height: {{ $fitted['height'] }}{{ $unit }};">
+                        @endif
+                        @if ($mask)
+                            </div>
+                            </div>
+                        @endif
                     </div>
                 @endif
             @elseif ($element->type === 'qrcode' && isset($codeSources[$element->id]))
-                <img src="{{ $codeSources[$element->id] }}" class="element" style="{{ $wrapperStyle }}">
+                <img src="{{ $codeSources[$element->id]['src'] }}" class="element" style="{{ $wrapperStyle }}">
             @elseif ($element->type === 'barcode' && isset($codeSources[$element->id]))
-                <img src="{{ $codeSources[$element->id] }}" class="element" style="{{ $wrapperStyle }} width: {{ $element->width }}{{ $unit }}; height: {{ $element->height }}{{ $unit }};">
+                @php($code = $codeSources[$element->id])
+                <div class="element" style="{{ $wrapperStyle }}">
+                    <img src="{{ $code['src'] }}" style="position: absolute; left: 0; top: 0; width: {{ $element->width }}{{ $unit }}; height: {{ $element->height }}{{ $unit }};">
+                    @if ($code['caption'] !== null)
+                        {{-- The Studio sets the caption with its em box's bottom on the box's bottom edge (textBaseline 'bottom'). --}}
+                        <div style="position: absolute; left: 0; bottom: 0; width: {{ $element->width }}{{ $unit }}; text-align: center; white-space: nowrap; font-family: '{{ $fonts->resolveFamily('Roboto') }}'; font-weight: 400; font-size: {{ $code['fontSize'] }}{{ $unit }}; line-height: {{ $code['fontSize'] }}{{ $unit }}; color: {{ $code['color'] }};">{{ $code['caption'] }}</div>
+                    @endif
+                </div>
             @endif
         @endforeach
     </div>

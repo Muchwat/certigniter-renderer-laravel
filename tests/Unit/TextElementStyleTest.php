@@ -77,13 +77,28 @@ class TextElementStyleTest extends TestCase
         $this->assertSame('', $this->describe([])['decorationCss']);
     }
 
-    public function test_shadow_css_is_empty_unless_shadow_is_an_array(): void
+    public function test_there_is_no_shadow_unless_shadow_is_an_array(): void
     {
-        $this->assertSame('', $this->describe(['shadow' => 'not-an-array'])['shadowCss']);
-        $this->assertSame('', $this->describe([])['shadowCss']);
+        $this->assertSame([], $this->describe(['shadow' => 'not-an-array'])['shadowLayers']);
+        $this->assertSame([], $this->describe([])['shadowLayers']);
+    }
 
-        $style = $this->describe(['shadow' => ['color' => '#112233', 'offsetX' => 1.5, 'offsetY' => 2.0, 'blur' => 3.0]]);
-        $this->assertSame('text-shadow: 1.5mm 2mm 3mm #112233;', $style['shadowCss']);
+    public function test_an_unblurred_shadow_is_one_copy_moved_by_its_offset_in_studio_pixels(): void
+    {
+        $layers = $this->describe(['shadow' => ['color' => '#112233', 'offsetX' => 3.0, 'offsetY' => -6.0, 'blur' => 0]])['shadowLayers'];
+
+        $this->assertCount(1, $layers);
+        $this->assertEqualsWithDelta(3 * 25.4 / 96, $layers[0]['dx'], 1e-9);
+        $this->assertEqualsWithDelta(-6 * 25.4 / 96, $layers[0]['dy'], 1e-9);
+        $this->assertSame('rgba(17, 34, 51, 1)', $layers[0]['color']);
+    }
+
+    public function test_a_blurred_shadow_is_spread_over_faint_copies_in_the_studios_default_colour(): void
+    {
+        $layers = $this->describe(['shadow' => ['offsetX' => 0, 'offsetY' => 0, 'blur' => 8.0]])['shadowLayers'];
+
+        $this->assertCount(48, $layers);
+        $this->assertSame(sprintf('rgba(0, 0, 0, %s)', round(1 - (1 - round(128 / 255, 4)) ** (1 / 48), 4)), $layers[0]['color']);
     }
 
     public function test_gradient_first_stop_overrides_the_flat_color_fallback(): void
@@ -180,5 +195,32 @@ class TextElementStyleTest extends TestCase
         $style = $this->describe(['fontSize' => 20.0]);
 
         $this->assertEqualsWithDelta($style['fontSizePt'] * 0.0875, $style['baselineCorrectionPt'], 1e-9);
+    }
+
+    public function test_straight_text_has_no_curved_glyphs(): void
+    {
+        $element = $this->element(['text' => 'ABCD']);
+
+        $this->assertSame([], TextElementStyle::curvedGlyphBoxes($element, TextElementStyle::describe($element, 'css-hex', 'mm', $this->fonts()), $this->fonts()));
+    }
+
+    public function test_curved_text_is_one_upright_line_box_per_glyph_turned_onto_the_circle(): void
+    {
+        $element = $this->element(['text' => "AB\nCD", 'fontSize' => 16.0, 'lineHeight' => 1.0, 'curveRadius' => 30]);
+        $style = TextElementStyle::describe($element, 'css-hex', 'mm', $this->fonts());
+        $boxes = TextElementStyle::curvedGlyphBoxes($element, $style, $this->fonts());
+
+        // The line break reads as a space; unmeasured (no Dompdf), each glyph is half an em.
+        $this->assertSame(['A', 'B', ' ', 'C', 'D'], array_column($boxes, 'text'));
+        $advance = 6 * 25.4 / 72;
+        foreach ($boxes as $box) {
+            $this->assertEqualsWithDelta($advance, $box['width'], 1e-9);
+            $this->assertEqualsWithDelta(12 * 25.4 / 72, $box['height'], 1e-9);
+        }
+        // Symmetric about the apex: the middle glyph stands straight up, the ends turn equally.
+        $this->assertEqualsWithDelta(0.0, $boxes[2]['rotation'], 1e-9);
+        $this->assertEqualsWithDelta(-$boxes[0]['rotation'], $boxes[4]['rotation'], 1e-9);
+        $this->assertEqualsWithDelta(rad2deg(-2 * $advance / 30), $boxes[0]['rotation'], 1e-9);
+        $this->assertLessThan(0, $boxes[0]['rotation']);
     }
 }

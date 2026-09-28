@@ -18,8 +18,7 @@ use Orchestra\Testbench\TestCase as TestbenchTestCase;
  *
  * This is deliberately not mocked. The parts of the package that only
  * exist inside a framework - config merging and publishing, the container
- * binding, the `certigniter::` view namespace, the facade root
- * QrCodeRenderer needs - are exactly the parts that break across a major
+ * binding, the `certigniter::` view namespace - are exactly the parts that break across a major
  * Laravel release, so they are exercised against the framework itself.
  */
 abstract class TestCase extends TestbenchTestCase

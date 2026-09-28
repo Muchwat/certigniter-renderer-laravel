@@ -41,8 +41,7 @@ The package can:
   lowest and highest dependency set each constraint allows
 - The `zip` PHP extension (`ext-zip`) - a `.igniter` file is a ZIP container
 - A writable system temporary directory for Dompdf's font cache
-- The PHP extensions required by Dompdf, Simple QR Code, and the selected
-  image formats
+- The PHP extensions required by Dompdf and the selected image formats
 - A `gs` (Ghostscript) executable on `PATH` (e.g. `brew install ghostscript` /
   `apt-get install ghostscript`), but only if you call `capture()` - no
   PHP extension required, it's shelled out to directly
@@ -570,16 +569,19 @@ barcode - see [Dynamic QR code and barcode values](#dynamic-qr-code-and-barcode-
 | Static and variable text | Yes |
 | Font family, weight, style, alignment | Yes |
 | Line height and letter spacing | Yes |
-| Underline, strike-through, shadow | Yes |
+| Underline, strike-through, blurred shadow | Yes |
 | Text bottom borders | Yes |
-| Rectangle and four-sided polygon shapes | Yes |
+| Rectangles, ellipses, polygons and library (path) shapes | Yes |
+| Lines, arrows and elbow connectors | Yes |
+| Gradient shape fills | Yes (as fine bands) |
+| Blurred drop shadows | Yes (approximated) |
 | Per-corner rounded rectangles | Yes |
-| Images with contain/fill and content alignment | Yes |
-| Circle and rounded-rectangle image masks | Yes |
+| Images with contain/fill/cover, crops and content alignment | Yes |
+| Circle and rounded-rectangle image masks, with the Studio's size factors | Yes |
 | Horizontal and vertical element mirroring | Yes |
-| QR codes | Yes |
+| QR codes, module for module as the Studio draws them (padding, round modules/eyes) | Yes |
 | Dynamic and verification-link QR codes and barcodes | Yes |
-| Code39, EAN-13, EAN-8, UPC-A, ITF, Codabar, Code128 | Yes |
+| Code39, EAN-13, EAN-8, UPC-A, ITF, Codabar, Code128, bar for bar as the Studio draws them, with caption | Yes |
 | Group rotation and opacity composition | Yes, configurable |
 | Fonts carried inside the `.igniter` | Yes |
 
@@ -610,6 +612,13 @@ travel with it.
 - Dompdf approximates some CSS rotation behavior.
 - Dompdf cannot faithfully reproduce gradient-filled text, so the first
   gradient stop is used as a flat fallback color.
+- Dompdf draws no SVG gradients, filters or clip paths. Gradient shape fills
+  are drawn as flat bands at most 0.25 mm apart, and blurred shadows (shape
+  and text) as 48 faint copies spread over the Studio's Gaussian (8 for very
+  heavy library shapes). Both read as the Studio's, but are not its exact
+  pixels.
+- Barcode captions are set in Roboto only if the file carries it; otherwise
+  in DejaVu Sans. The Studio always uses Roboto.
 - A path-only image from another computer cannot render unless the host app
   supplies an image override.
 - The project model is currently single-page/single-sided.
@@ -694,8 +703,8 @@ install outside the Certigniter monorepo gets to verify its install.
 [Testbench][testbench], which discovers this package's service provider
 through the same `extra.laravel` metadata a host app's package discovery
 uses. It covers what only exists inside a framework - config merging and
-publishing, the container binding and facade, the `certigniter::` view
-namespace, and the facade root `QrCodeRenderer` needs - and renders
+publishing, the container binding and facade, and the `certigniter::` view
+namespace - and renders
 `.igniter` fixtures all the way to real PDF bytes, asserting on what landed
 on the page: the text that was drawn, the page box, whether the project's
 own font travelled into the file.

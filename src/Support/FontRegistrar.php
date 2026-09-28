@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Certigniter\CertificateRenderer\Support;
 
 use Dompdf\Dompdf;
+use Dompdf\FontMetrics;
 use Dompdf\Options;
 use FontLib\Font;
 
@@ -54,6 +55,9 @@ class FontRegistrar
     /** @var array<string, array{ascent: float, descent: float}> resolved family => ascent/|descent|, each as a fraction of the font's own em size */
     private array $metrics = [];
 
+    /** Dompdf's own font measurement, kept from registerAll() so text is measured exactly as Dompdf will lay it out. */
+    private ?FontMetrics $fontMetrics = null;
+
     /** @param array<string, array{normal?: string, bold?: string}> $embeddedFonts family name => base64 font bytes per variant */
     public function __construct(
         private readonly array $embeddedFonts = [],
@@ -69,6 +73,7 @@ class FontRegistrar
     public function registerAll(Dompdf $dompdf): void
     {
         $metrics = $dompdf->getFontMetrics();
+        $this->fontMetrics = $metrics;
 
         foreach ($this->embeddedFonts as $family => $variants) {
             $registered = false;
@@ -126,6 +131,22 @@ class FontRegistrar
         }
 
         return self::FALLBACK_FAMILY;
+    }
+
+    /**
+     * How wide `$text` is set in a resolved family, in points, as Dompdf
+     * measures it: letter spacing after every character included. Before
+     * registerAll() (or for a family Dompdf can't load) it falls back to half
+     * an em per character, which only keeps a layout from collapsing.
+     */
+    public function textWidthPt(string $resolvedFamily, bool $bold, float $sizePt, float $letterSpacingPt, string $text): float
+    {
+        $font = $this->fontMetrics?->getFont($resolvedFamily, $bold ? 'bold' : 'normal');
+        if ($font === null) {
+            return mb_strlen($text) * ($sizePt / 2 + $letterSpacingPt);
+        }
+
+        return $this->fontMetrics->getTextWidth($text, $font, $sizePt, 0.0, $letterSpacingPt);
     }
 
     /**

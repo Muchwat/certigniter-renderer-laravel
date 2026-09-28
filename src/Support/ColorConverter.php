@@ -23,10 +23,20 @@ namespace Certigniter\CertificateRenderer\Support;
  */
 class ColorConverter
 {
-    /** @return array{r: int, g: int, b: int, a: float} */
+    /**
+     * `$fallbackHex` is always CSS hex (#RRGGBB or #RRGGBBAA), whatever the
+     * file's own `$colorFormat`: it is a default written in this code, like
+     * the Studio's own `'#00000066'`, not a value read from the file.
+     *
+     * @return array{r: int, g: int, b: int, a: float}
+     */
     public static function toRgba(?string $hex, string $colorFormat, string $fallbackHex = '#000000'): array
     {
-        $digits = self::normalizeDigits($hex) ?? self::normalizeDigits($fallbackHex);
+        $digits = self::normalizeDigits($hex);
+        if ($digits === null) {
+            $digits = self::normalizeDigits($fallbackHex);
+            $colorFormat = 'css-hex';
+        }
 
         if ($digits === null) {
             return ['r' => 0, 'g' => 0, 'b' => 0, 'a' => 1.0];

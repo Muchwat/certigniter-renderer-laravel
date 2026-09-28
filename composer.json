@@ -14,9 +14,7 @@
         "php": "^8.2",
         "ext-zip": "*",
         "illuminate/support": "^12.0|^13.0",
-        "barryvdh/laravel-dompdf": "^2.0|^3.0",
-        "simplesoftwareio/simple-qrcode": "^4.2",
-        "picqer/php-barcode-generator": "^3.0"
+        "barryvdh/laravel-dompdf": "^2.0|^3.0"
     },
     "require-dev": {
         "larastan/larastan": "^3.0",

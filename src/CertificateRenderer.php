@@ -13,6 +13,7 @@ use Certigniter\CertificateRenderer\Support\GroupComposer;
 use Certigniter\CertificateRenderer\Support\IgniterPackage;
 use Certigniter\CertificateRenderer\Support\QrCodeRenderer;
 use Certigniter\CertificateRenderer\Support\RecipientMerge;
+use Certigniter\CertificateRenderer\Support\Units;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use RuntimeException;
@@ -391,7 +392,7 @@ class CertificateRenderer
      * entire render, the same way an unresolvable image does.
      *
      * @param  DesignElement[]  $elements
-     * @return array<string, string> element id => data: URI
+     * @return array<string, array{src: string, caption?: string|null, fontSize?: float, color?: string}> element id => data: URI, plus a barcode's caption
      */
     private function resolveCodeSources(array $elements, CertificateProject $project): array
     {
@@ -412,27 +413,32 @@ class CertificateRenderer
             }
 
             $foreground = ColorConverter::toRgba($element->property('color'), $project->colorFormat, '#000000');
+            $background = ColorConverter::toRgba($element->property('backgroundColor'), $project->colorFormat, '#FFFFFF');
+            $pixelsPerUnit = Units::pixelsPer($project->unit);
+            if ($data === '') {
+                // An empty static code draws the Studio's placeholder content (canvasCodeData()).
+                $data = $element->type === 'qrcode'
+                    ? 'certigniter_placeholder'
+                    : BarcodeRenderer::sampleData((string) $element->property('barcodeType'));
+            }
 
             try {
                 if ($element->type === 'qrcode') {
-                    $background = ColorConverter::toRgba($element->property('backgroundColor'), $project->colorFormat, '#FFFFFF');
-                    $sizePx = (int) round(min($element->width, $element->height) * 3.78);
-
-                    $sources[$element->id] = QrCodeRenderer::svgDataUri(
-                        $data !== '' ? $data : 'certigniter',
-                        $sizePx,
-                        $foreground,
-                        $background,
-                        (int) $element->property('errorCorrectionLevel', 0),
-                    );
+                    $sources[$element->id] = [
+                        'src' => 'data:image/svg+xml;base64,'.base64_encode(
+                            QrCodeRenderer::svg($element, $data, $foreground, $background, $pixelsPerUnit),
+                        ),
+                    ];
                 } else {
-                    $sources[$element->id] = BarcodeRenderer::pngDataUri(
-                        $data !== '' ? $data : '123456789',
-                        (string) $element->property('barcodeType', 'code128'),
-                        (int) round($element->width * 3.78),
-                        (int) round($element->height * 3.78),
-                        $foreground,
-                    );
+                    $layout = BarcodeRenderer::layout($element, $data, $pixelsPerUnit);
+                    $sources[$element->id] = [
+                        'src' => 'data:image/svg+xml;base64,'.base64_encode(
+                            BarcodeRenderer::svg($element, $layout, $foreground, $background),
+                        ),
+                        'caption' => $layout['showText'] ? $layout['text'] : null,
+                        'fontSize' => $layout['fontSize'],
+                        'color' => ColorConverter::toCss($element->property('color'), $project->colorFormat, '#000000'),
+                    ];
                 }
             } catch (Throwable $e) {
                 $this->warnings[] = sprintf(

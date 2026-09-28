@@ -18,7 +18,7 @@ use Certigniter\CertificateRenderer\Data\DesignElement;
  */
 class TextElementStyle
 {
-    /** @return array{fontFamily: string, fontSizePt: float, fontWeight: int, fontStyle: string, color: string, textAlign: string, lineHeightPt: float, letterSpacing: float, decorationCss: string, shadowCss: string, overflowCss: string, contentPositionCss: string, baselineCorrectionPt: float, bottomBorderSpanCss: string} */
+    /** @return array{fontFamily: string, fontSizePt: float, fontWeight: int, fontStyle: string, color: string, textAlign: string, lineHeightPt: float, letterSpacing: float, decorationCss: string, shadowLayers: list<array{dx: float, dy: float, color: string}>, overflowCss: string, contentPositionCss: string, baselineCorrectionPt: float, bottomBorderSpanCss: string} */
     public static function describe(DesignElement $element, string $colorFormat, string $unit, FontRegistrar $fonts): array
     {
         $fontFamily = $fonts->resolveFamily($element->property('fontFamily'));
@@ -56,14 +56,24 @@ class TextElementStyle
         }
         $decorationCss = $decorations ? 'text-decoration: '.implode(' ', $decorations).';' : '';
 
+        // A text shadow is drawn as copies of the text behind it (dompdf
+        // ignores CSS text-shadow): moved by its offset and spread over its
+        // blur (ShadowBlur), all in Studio px - a canvas shadowBlur of b is a
+        // Gaussian of standard deviation b / 2.
+        $shadowLayers = [];
         $shadow = $element->property('shadow');
-        $shadowCss = '';
         if (is_array($shadow)) {
-            $shadowColor = ColorConverter::toCss($shadow['color'] ?? null, $colorFormat, '#00000080');
-            $shadowCss = sprintf(
-                'text-shadow: %s%s %s%s %s%s %s;',
-                $shadow['offsetX'] ?? 0, $unit, $shadow['offsetY'] ?? 0, $unit, $shadow['blur'] ?? 0, $unit, $shadowColor,
-            );
+            $pixelsPerUnit = Units::pixelsPer($unit);
+            $shadowRgba = ColorConverter::toRgba($shadow['color'] ?? null, $colorFormat, '#00000080');
+            $offsets = ShadowBlur::offsets(max(0.0, (float) ($shadow['blur'] ?? 0)) / 2 / $pixelsPerUnit);
+            $alpha = ShadowBlur::copyAlpha($shadowRgba['a'], count($offsets));
+            foreach ($offsets as [$ox, $oy]) {
+                $shadowLayers[] = [
+                    'dx' => (float) ($shadow['offsetX'] ?? 0) / $pixelsPerUnit + $ox,
+                    'dy' => (float) ($shadow['offsetY'] ?? 0) / $pixelsPerUnit + $oy,
+                    'color' => sprintf('rgba(%d, %d, %d, %s)', $shadowRgba['r'], $shadowRgba['g'], $shadowRgba['b'], round($alpha, 4)),
+                ];
+            }
         }
 
         // Text gradients have no faithful dompdf equivalent (no
@@ -141,11 +151,51 @@ class TextElementStyle
             'lineHeightPt' => $lineHeightPt,
             'letterSpacing' => $letterSpacing,
             'decorationCss' => $decorationCss,
-            'shadowCss' => $shadowCss,
+            'shadowLayers' => $shadowLayers,
             'overflowCss' => $overflowCss,
             'contentPositionCss' => $contentPositionCss,
             'baselineCorrectionPt' => $baselineCorrectionPt,
             'bottomBorderSpanCss' => $bottomBorderSpanCss,
         ];
+    }
+
+    /**
+     * Text on a curve (CurvedTextLayout): one box per glyph, in mm inside the
+     * element, each a line box that CSS turns about its centre onto the
+     * circle. Glyphs are measured by Dompdf itself, so each box is exactly as
+     * wide as the advance Dompdf will set in it. Straight text gets `[]`.
+     *
+     * The same baseline correction straight text gets (see describe()) moves
+     * each glyph up along its own upright, not the page's.
+     *
+     * @param  array{fontFamily: string, fontSizePt: float, fontWeight: int, lineHeightPt: float, letterSpacing: float, baselineCorrectionPt: float}  $style  describe()'s result
+     * @return list<array{text: string, left: float, top: float, width: float, height: float, rotation: float}>
+     */
+    public static function curvedGlyphBoxes(DesignElement $element, array $style, FontRegistrar $fonts): array
+    {
+        $radius = CurvedTextLayout::radius($element);
+        if ($radius === 0.0) {
+            return [];
+        }
+
+        $ptToMm = 25.4 / 72;
+        $lineHeight = $style['lineHeightPt'] * $ptToMm;
+        $measure = fn (string $prefix): float => $fonts->textWidthPt(
+            $style['fontFamily'], $style['fontWeight'] >= 700, $style['fontSizePt'], $style['letterSpacing'], $prefix,
+        ) * $ptToMm;
+        $glyphs = CurvedTextLayout::place(
+            CurvedTextLayout::glyphs(CurvedTextLayout::line((string) $element->property('text', '')), $measure),
+            $radius, $lineHeight, $element->width, $element->height,
+        );
+        $correction = $style['baselineCorrectionPt'] * $ptToMm;
+
+        return array_map(fn (array $glyph): array => [
+            'text' => $glyph['text'],
+            'left' => $glyph['x'] + $correction * sin($glyph['angle']) - ($glyph['end'] - $glyph['start']) / 2,
+            'top' => $glyph['y'] - $correction * cos($glyph['angle']) - $lineHeight / 2,
+            'width' => $glyph['end'] - $glyph['start'],
+            'height' => $lineHeight,
+            'rotation' => rad2deg($glyph['angle']),
+        ], $glyphs);
     }
 }

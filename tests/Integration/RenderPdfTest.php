@@ -37,6 +37,20 @@ class RenderPdfTest extends TestCase
         $this->assertTrue($pdf->containsText('Certificate of Completion'));
     }
 
+    public function test_curved_text_is_drawn_one_turned_glyph_at_a_time(): void
+    {
+        $pdf = RenderedPdf::from($this->renderer()->renderIgniterToPdf(
+            IgniterFixture::make()->withText('arch', 'SEAL', ['fontSize' => 24.0, 'curveRadius' => 20.0])->bytes()
+        ));
+
+        $this->assertTrue($pdf->isStructurallyValid());
+        // Each glyph is set on its own, so the word is there letter by letter, never as one run.
+        foreach (['S', 'E', 'A', 'L'] as $letter) {
+            $this->assertTrue($pdf->containsText($letter));
+        }
+        $this->assertFalse($pdf->containsText('SEAL'));
+    }
+
     public function test_it_renders_through_the_facade_too(): void
     {
         $pdf = RenderedPdf::from(Certigniter::renderIgniterToPdf(
@@ -124,10 +138,8 @@ class RenderPdfTest extends TestCase
         $this->assertSame([], $renderer->warnings());
     }
 
-    public function test_a_qr_code_override_is_drawn_through_the_simple_qrcode_facade(): void
+    public function test_a_qr_code_override_is_drawn_onto_the_page(): void
     {
-        // QrCodeRenderer goes through a facade, so this path only exists
-        // inside a booted application - it is the reason this suite exists.
         $renderer = $this->renderer();
         $igniter = IgniterFixture::make()->withQrCode('verify', '', 'verification')->bytes();
 

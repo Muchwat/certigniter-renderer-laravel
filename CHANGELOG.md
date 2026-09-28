@@ -2,10 +2,67 @@
 
 All notable changes to this package are documented here.
 
-## [Unreleased]
+## [3.1.0] - 2026-09-28
 
 ### Added
 
+- **Lines and arrows.** `shapeType: 'line'` and `'arrow'` are drawn as the
+  Studio draws them (`ConnectorGeometry`): an open stroke between two stored
+  `points`, or bottom-left to top-right (`connectorStyle: 'elbow'` steps
+  across at half the width), with filled arrowheads (`arrowStart`,
+  `arrowEnd`, default on for arrows) max(4 x stroke, 8px) long. They are
+  never filled. They used to render as filled rectangles.
+- **Gradient shape fills.** A rectangle, ellipse or polygon's `gradient`
+  ({colors, angle}) is painted with the Studio's evenly spaced stops and
+  gradient line. They used to fill flat in `fillColor`.
+- **Blurred shadows.** `shadowBlur` (a Gaussian of shadowBlur / 2, default
+  3 mm) and a text `shadow.blur` are drawn as faint copies spread over the
+  same Gaussian (`ShadowBlur`), since neither PDF engine can blur vectors.
+- **QR codes drawn as the Studio draws them.** `QrEncoder` is a port of the
+  `qrcode` npm package the Studio encodes with, so a code is the Studio's
+  symbol module for module (a stock encoder picks other segment modes and
+  masks). The code is a centred square of the box's shorter side with
+  `padding` (Studio px, default 2) of quiet zone, in `backgroundColor`, with
+  round data modules (`dataModuleShape`) and eyes (`eyeShape`) when asked.
+- **Barcodes drawn as the Studio draws them.** `BarcodeEncoding` is a port
+  of the JsBarcode encoders the Studio uses (Code 128 set switching, EAN/UPC
+  quiet zones, ITF and Codabar), so the bars are the Studio's. They fill the
+  box's width over `backgroundColor`, with the caption along the bottom
+  unless `showText` is false.
+- **Image masks and `cover`.** A circle mask is a true circle of the box's
+  shorter side (it was an ellipse in a non-square box), scaled by
+  `maskRadiusFactor`; a rounded rectangle is scaled by `maskWidthFactor`/
+  `maskHeightFactor`; `maskEnabled: false` turns a mask off. `fit: 'cover'`
+  is supported, and a picture is always clipped to its box.
+- `tests/Fixtures/studio-codes.json`: QR and barcode output from the
+  Studio's own libraries, which `StudioCodeParityTest` holds the ports to.
+- Dompdf has no SVG gradients or clip paths, so a gradient fill is thin
+  flat bands, each the shape's outline clipped to its strip
+  (`GradientBands`), at most 0.25 mm apart.
+- **Text on a curve.** A text element's `curveRadius` (the signed radius, in
+  mm, of the circle its line follows: positive arches it over the top,
+  negative bends it along the bottom) runs its text on one line round that
+  circle. `CurvedTextLayout` is a port of the Studio's curvedText.js and shares
+  its test cases. The Blade view sets each glyph in its own line box, measured by Dompdf itself
+  (`FontRegistrar::textWidthPt()`) and turned onto the circle with a CSS
+  rotation (`TextElementStyle::curvedGlyphBoxes()`). A curve carries no underline,
+  strikethrough or bottom border. Straight text is unchanged.
+- **Library shapes (`shapeType: 'path'`).** The Studio's Shapes library
+  places vector shapes stored as `pathParts` (outlines in absolute M/L/C/Z over
+  the 0-1 box, each pointing at one `pathColors` entry). `PathShapeGeometry`
+  stretches them to the element box, inset by half the stroke, and rounds
+  every sharp corner by `cornerRadius`. `ShapeRenderer` fills and strokes
+  each part in paint order with round joins, as the Studio draws them.
+- **Figma-style stroke position for rectangles.** A shape's `strokeAlign`
+  (`inside`, the default, `center` or `outside`) sets where its border sits
+  against its box. Inside draws exactly as before. Center and outside fill
+  the box and stroke a separate outline on or around it; an outside border's
+  rounded corners grow by half a stroke so they stay concentric.
+- **Non-destructive image crops.** An `image` element's `cropX`/`cropY`/
+  `cropWidth`/`cropHeight` (fractions 0-1 of the original picture, written by
+  the Studio's on-canvas crop mode) are now honoured via `ImageElementLayout::crop()`/`cropPlacement()`: the blade template draws the whole picture inside a box that clips it to the crop.
+  `contain` letterboxes by the crop's shape. Elements without them render
+  exactly as before.
 - **An integration suite that boots a real Laravel application.**
   `tests/Integration` uses [Testbench][testbench] to boot an app that
   discovers this package the same way a host app does, and renders
@@ -51,6 +108,19 @@ All notable changes to this package are documented here.
 
 ### Fixed
 
+- A QR code's `errorCorrectionLevel` is read as the Dart `qr` constant the
+  Studio and Design Studio write (L=1, M=0, Q=3, H=2). It was read as an
+  index into L, M, Q, H, so an L code rendered as M, with a different grid.
+- A shape shadow with no `shadowColor` is the Studio's black at 40%. Colour
+  fallbacks are now always CSS hex; `#66000000` read as CSS hex was a fully
+  transparent red, so the shadow was invisible.
+- A text shadow's `offsetX`/`offsetY` are Studio px, not mm (they were
+  3.78x too far), and an unknown `barcodeType` is skipped with a warning, as
+  the Studio shows it as an error, instead of silently becoming Code 128.
+- An empty static QR code or barcode draws the Studio's placeholder content
+  (`certigniter_placeholder`, or the format's sample).
+- Text shadows are drawn at all: Dompdf ignores CSS `text-shadow`, so the
+  shadow is copies of the text behind it.
 - A `.igniter` whose project contains invalid UTF-8 crashed with a
   `TypeError` instead of a clear rejection: `json_encode()` returns `false`
   for such a project and the result was passed straight to `strlen()`. Since
@@ -90,6 +160,12 @@ All notable changes to this package are documented here.
   `composer install` will not resolve it - the constraint claimed something
   that could no longer be installed. Laravel 13 was already claimed but
   never tested; it is now in CI.
+
+### Removed
+
+- The `simplesoftwareio/simple-qrcode` and `picqer/php-barcode-generator`
+  dependencies (and, with them, `bacon/bacon-qr-code` and `dasprid/enum`).
+  QR codes and barcodes are encoded by `QrEncoder` and `BarcodeEncoding`.
 
 ## [3.0.0] - 2026-09-15
 
