@@ -40,7 +40,7 @@ The package can:
 - PHP 8.2 or newer (8.3+ on Laravel 13)
 - Laravel 12 or 13 - both are covered by CI on every push, across the
   lowest and highest dependency set each constraint allows
-- The `zip` PHP extension (`ext-zip`) - a `.igniter` file is a ZIP container
+- The `zip` PHP extension (`ext-zip`)
 - A writable system temporary directory for Dompdf's font cache
 - The PHP extensions required by Dompdf and the selected image formats
 - A `gs` (Ghostscript) executable on `PATH` (e.g. `brew install ghostscript` /
@@ -51,20 +51,6 @@ The package can:
 
 ```bash
 composer require certigniter/laravel-certificate-renderer
-```
-
-For local package development, use a path repository instead:
-
-```json
-{
-    "repositories": [
-        {
-            "type": "path",
-            "url": "packages/certigniter/laravel-certificate-renderer",
-            "options": { "symlink": true }
-        }
-    ]
-}
 ```
 
 Laravel package discovery registers the service provider and `Certigniter`
@@ -601,8 +587,8 @@ so text is set at exactly its designed size.
 ### Fonts
 
 A `.igniter` file is self-contained: every font family it uses travels inside
-it, as raw members of the archive's `assets/fonts/` tree. This package ships no
-font files of its own and registers exactly what the file carries.
+it. This package ships no font files of its own and registers exactly what the
+file carries.
 
 A family the file names but carries no bytes for renders in Dompdf's own
 built-in DejaVu Sans. Re-save such a project from Certigniter so its fonts
@@ -630,10 +616,9 @@ travel with it.
 - Validate uploaded file size and MIME type before reading it into memory.
 - Do not trust original image paths from uploaded templates. Remote access is
   disabled and Dompdf is restricted to the font cache directory.
-- Uploaded `.igniter` packages are read without ever being extracted to disk.
-  The reader enforces per-file and total size limits and rejects unknown or
-  duplicate archive paths, symlinks, ZIP-level encryption, unsupported
-  compression, and checksum mismatches.
+- Uploaded `.igniter` files are read in memory, never extracted to disk. The
+  reader enforces size limits and rejects any file that is malformed, has
+  unexpected content, or has been tampered with.
 - Authorize who may render, inspect, or replace certificate assets.
 - Escape user-facing metadata when displaying project titles or element names.
 - Use queues and execution limits for bulk issuance.
@@ -678,11 +663,11 @@ fill the gap. Re-save the project from Certigniter so the family is embedded;
 the renderer then uses those bytes directly. There is no server-side font
 directory to install into.
 
-### An upload is rejected as "not a ZIP container"
+### An upload is rejected as "not a .igniter file"
 
-A `.igniter` is a ZIP package. A file that starts with anything else is not
-one - most likely it predates the current format, and needs re-exporting from
-Certigniter.
+The exception message says what the file looks like instead (an older
+`.igniter` format, a saved web page, an empty upload) and what to do. In most
+cases, re-export the certificate from Certigniter and upload that file.
 
 ## Testing
 
