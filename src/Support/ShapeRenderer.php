@@ -65,100 +65,149 @@ class ShapeRenderer
         if (ConnectorGeometry::isConnector($element)) {
             return self::renderConnector($element, $colorFormat, $pixelsPerUnit);
         }
-        $isPolygon = $element->property('shapeType') === 'polygon';
-        $isEllipse = $element->property('shapeType') === 'ellipse';
-        $strokeWidthRaw = max(0.0, (float) $element->property('strokeWidth', 0.5));
-        $fillEnabled = $element->property('fillEnabled', true) !== false;
-        $borderEnabled = $element->property('borderEnabled', true) !== false;
-        $borderStyle = (string) $element->property('borderStyle', 'solid');
-        $strokeWidth = $borderEnabled ? $strokeWidthRaw : 0.0;
-
-        $gradient = $element->property('gradient');
-        $fill = $fillEnabled
-            ? self::paint('fill', ColorConverter::toRgba(
-                GradientBands::applies($gradient) ? null : ($gradient['colors'][0] ?? $element->property('fillColor')),
-                $colorFormat,
-                '#FFFFFF',
-            ))
-            : 'fill="none"';
-        $stroke = $strokeWidth > 0
-            ? ColorConverter::toCss($element->property('strokeColor'), $colorFormat, '#000000')
-            : 'none';
-
-        // Dash and gap lengths are multiples of the stroke width. 'dotted' pairs a
-        // near-zero dash with a round cap so each dash paints as a round dot.
-        $dashArray = match ($borderStyle) {
-            'dashed' => sprintf('%s %s', $strokeWidth * 2.5, $strokeWidth * 1.8),
-            'dotted' => sprintf('0.01 %s', $strokeWidth * 2.2),
-            default => null,
-        };
-        $linecap = $borderStyle === 'dotted' ? 'round' : 'butt';
+        $shapeType = (string) $element->property('shapeType');
+        $strokeWidth = self::strokeWidth($element);
 
         // Figma-style stroke position for rectangles (`strokeAlign`): inside,
         // the default, strokes the same inset path it fills, exactly as before
         // the property existed. Center and outside fill the box itself and
         // stroke a separate outline on or around it, which can reach past the
         // box, so the SVG is padded to fit.
-        $align = $isPolygon || $isEllipse || $strokeWidth <= 0 ? 'inside' : self::strokeAlign($element);
+        $align = in_array($shapeType, ['polygon', 'ellipse'], true) || $strokeWidth <= 0 ? 'inside' : self::strokeAlign($element);
         $split = $align !== 'inside';
-        $outset = match ($align) {
-            'center' => $strokeWidth / 2,
-            'outside' => $strokeWidth,
-            default => 0.0,
-        };
+        $inset = $split ? 0.0 : $strokeWidth / 2;
 
-        $shapeMarkup = match (true) {
-            $isPolygon => self::polygonMarkup($element),
-            $isEllipse => self::ellipseMarkup($element, $strokeWidth / 2),
-            $split => self::roundedRectMarkup($element, 0.0),
-            default => self::roundedRectMarkup($element, $strokeWidth / 2),
+        $shapeMarkup = match ($shapeType) {
+            'polygon' => self::polygonMarkup($element),
+            'ellipse' => self::ellipseMarkup($element, $inset),
+            default => self::roundedRectMarkup($element, $inset),
         };
         $strokeMarkup = $split
             ? self::roundedRectMarkup($element, $align === 'outside' ? -$strokeWidth / 2 : 0.0)
             : $shapeMarkup;
+        $strokeAttributes = self::strokeAttributes($element, $colorFormat, $strokeWidth, 'miter');
 
-        [$padLeft, $padTop, $padRight, $padBottom] = array_map(
-            fn (float $pad): float => $pad + $outset,
-            self::shadowPadding($element),
-        );
-
-        $shadowMarkup = self::shadowMarkup($element, $colorFormat, $shapeMarkup);
-
-        $width = $element->width + $padLeft + $padRight;
-        $height = $element->height + $padTop + $padBottom;
-
-        $strokeAttributes = sprintf(
-            'stroke="%s" stroke-width="%s"%s stroke-linecap="%s" stroke-linejoin="miter"',
-            $stroke, $strokeWidth,
-            $dashArray !== null ? sprintf(' stroke-dasharray="%s"', $dashArray) : '',
-            $linecap,
-        );
-        if ($fillEnabled && GradientBands::applies($gradient)) {
+        $gradient = $element->property('gradient');
+        if ($element->property('fillEnabled', true) !== false && GradientBands::applies($gradient)) {
             // The bands fill the same outline the flat fill would, then the border is stroked over them.
-            $outline = match (true) {
-                $isPolygon => self::polygonPoints($element),
-                $isEllipse => self::ellipsePoints($element, $strokeWidth / 2),
-                default => self::roundedRectPoints($element, $split ? 0.0 : $strokeWidth / 2),
-            };
-            $body = '';
-            foreach (GradientBands::bands($outline, $gradient, $element->width, $element->height, $colorFormat) as $band) {
-                $body .= sprintf('<polygon points="%s" %s />', self::svgPoints($band['points']), self::paint('fill', $band['color']));
-            }
-            $body .= $strokeWidth > 0 ? sprintf('<g fill="none" %s>%s</g>', $strokeAttributes, $strokeMarkup) : '';
+            $body = self::gradientBands($element, $colorFormat, self::outlinePoints($element, $shapeType, $inset), $gradient)
+                .($strokeWidth > 0 ? sprintf('<g fill="none" %s>%s</g>', $strokeAttributes, $strokeMarkup) : '');
         } else {
+            $fill = self::flatFill($element, $colorFormat, $gradient);
             $body = $split
                 ? sprintf('<g %s stroke="none">%s</g><g fill="none" %s>%s</g>', $fill, $shapeMarkup, $strokeAttributes, $strokeMarkup)
                 : sprintf('<g %s %s>%s</g>', $fill, $strokeAttributes, $shapeMarkup);
         }
 
+        $outset = self::strokeOutset($align, $strokeWidth);
+        $padding = array_map(fn (float $pad): float => $pad + $outset, self::shadowPadding($element));
+
+        return self::svgImage($element, $padding, self::shadowMarkup($element, $colorFormat, $shapeMarkup).$body);
+    }
+
+    /** How far a `strokeAlign` border reaches past the element's box. */
+    private static function strokeOutset(string $align, float $strokeWidth): float
+    {
+        return match ($align) {
+            'center' => $strokeWidth / 2,
+            'outside' => $strokeWidth,
+            default => 0.0,
+        };
+    }
+
+    /**
+     * The filled outline as a polygon, for gradient banding.
+     *
+     * @return list<array{0: float, 1: float}>
+     */
+    private static function outlinePoints(DesignElement $element, string $shapeType, float $inset): array
+    {
+        return match ($shapeType) {
+            'polygon' => self::polygonPoints($element),
+            'ellipse' => self::ellipsePoints($element, $inset),
+            default => self::roundedRectPoints($element, $inset),
+        };
+    }
+
+    /** The border width, or zero when the border is switched off (`borderEnabled`). */
+    private static function strokeWidth(DesignElement $element): float
+    {
+        return $element->property('borderEnabled', true) !== false
+            ? max(0.0, (float) $element->property('strokeWidth', 0.5))
+            : 0.0;
+    }
+
+    /**
+     * Stroke paint, width, dash pattern and caps for a border. Dash and gap
+     * lengths are multiples of the stroke width; 'dotted' pairs a near-zero
+     * dash with a round cap so each dash paints as a round dot.
+     */
+    private static function strokeAttributes(DesignElement $element, string $colorFormat, float $strokeWidth, string $linejoin): string
+    {
+        $borderStyle = (string) $element->property('borderStyle', 'solid');
+
+        return sprintf(
+            'stroke="%s" stroke-width="%s"%s stroke-linecap="%s" stroke-linejoin="%s"',
+            $strokeWidth > 0 ? ColorConverter::toCss($element->property('strokeColor'), $colorFormat, '#000000') : 'none',
+            $strokeWidth,
+            self::dashAttribute($borderStyle, $strokeWidth),
+            $borderStyle === 'dotted' ? 'round' : 'butt',
+            $linejoin,
+        );
+    }
+
+    private static function dashAttribute(string $borderStyle, float $strokeWidth): string
+    {
+        return match ($borderStyle) {
+            'dashed' => sprintf(' stroke-dasharray="%s %s"', $strokeWidth * 2.5, $strokeWidth * 1.8),
+            'dotted' => sprintf(' stroke-dasharray="0.01 %s"', $strokeWidth * 2.2),
+            default => '',
+        };
+    }
+
+    /** A solid fill: the gradient's first colour when it has too few stops to band, else `fillColor`. */
+    private static function flatFill(DesignElement $element, string $colorFormat, mixed $gradient): string
+    {
+        if ($element->property('fillEnabled', true) === false) {
+            return 'fill="none"';
+        }
+
+        return self::paint('fill', ColorConverter::toRgba(
+            GradientBands::applies($gradient) ? null : ($gradient['colors'][0] ?? $element->property('fillColor')),
+            $colorFormat,
+            '#FFFFFF',
+        ));
+    }
+
+    /**
+     * @param  list<array{0: float, 1: float}>  $outline
+     * @param  array{colors: list<string>, angle?: float|int|null}  $gradient
+     */
+    private static function gradientBands(DesignElement $element, string $colorFormat, array $outline, array $gradient): string
+    {
+        $bands = '';
+        foreach (GradientBands::bands($outline, $gradient, $element->width, $element->height, $colorFormat) as $band) {
+            $bands .= sprintf('<polygon points="%s" %s />', self::svgPoints($band['points']), self::paint('fill', $band['color']));
+        }
+
+        return $bands;
+    }
+
+    /**
+     * Wrap drawn content in an SVG widened by `$padding` (left, top, right,
+     * bottom) and re-anchored so the element's own box stays at its x/y.
+     *
+     * @param  array{0: float, 1: float, 2: float, 3: float}  $padding
+     * @return array{src: string, width: float, height: float, offsetX: float, offsetY: float}
+     */
+    private static function svgImage(DesignElement $element, array $padding, string $content): array
+    {
+        [$padLeft, $padTop, $padRight, $padBottom] = $padding;
+        $width = $element->width + $padLeft + $padRight;
+        $height = $element->height + $padTop + $padBottom;
         $svg = sprintf(
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %s %s">'
-            .'<g transform="translate(%s,%s)">%s%s</g>'
-            .'</svg>',
-            $width, $height,
-            $padLeft, $padTop,
-            $shadowMarkup,
-            $body,
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %s %s"><g transform="translate(%s,%s)">%s</g></svg>',
+            $width, $height, $padLeft, $padTop, $content,
         );
 
         return [
@@ -181,10 +230,8 @@ class ShapeRenderer
      */
     private static function renderPath(DesignElement $element, string $colorFormat): array
     {
-        $borderEnabled = $element->property('borderEnabled', true) !== false;
-        $strokeWidth = $borderEnabled ? max(0.0, (float) $element->property('strokeWidth', 0.5)) : 0.0;
+        $strokeWidth = self::strokeWidth($element);
         $fillEnabled = $element->property('fillEnabled', true) !== false;
-        $borderStyle = (string) $element->property('borderStyle', 'solid');
         $colors = $element->property('pathColors', []);
         $parts = $element->property('pathParts', []);
         $groups = $element->property('pathGroups', []);
@@ -197,21 +244,7 @@ class ShapeRenderer
             max(0.0, (float) $element->property('cornerRadius', 0.0)),
         );
 
-        $strokeAttributes = '';
-        if ($strokeWidth > 0) {
-            $dashArray = match ($borderStyle) {
-                'dashed' => sprintf(' stroke-dasharray="%s %s"', $strokeWidth * 2.5, $strokeWidth * 1.8),
-                'dotted' => sprintf(' stroke-dasharray="0.01 %s"', $strokeWidth * 2.2),
-                default => '',
-            };
-            $strokeAttributes = sprintf(
-                ' stroke="%s" stroke-width="%s"%s stroke-linecap="%s" stroke-linejoin="round"',
-                ColorConverter::toCss($element->property('strokeColor'), $colorFormat, '#000000'),
-                $strokeWidth,
-                $dashArray,
-                $borderStyle === 'dotted' ? 'round' : 'butt',
-            );
-        }
+        $strokeAttributes = $strokeWidth > 0 ? ' '.self::strokeAttributes($element, $colorFormat, $strokeWidth, 'round') : '';
 
         $body = '';
         $shadowBody = '';
@@ -222,24 +255,10 @@ class ShapeRenderer
             $shadowBody .= sprintf('<path d="%s" fill-rule="%s" />', $d, $outline['rule']);
         }
 
-        [$padLeft, $padTop, $padRight, $padBottom] = self::shadowPadding($element);
         // A generated ornament can carry megabytes of path data; 48 copies of that would bloat the PDF.
         $shadowMarkup = self::shadowMarkup($element, $colorFormat, $shadowBody, light: strlen($shadowBody) > 100_000);
 
-        $width = $element->width + $padLeft + $padRight;
-        $height = $element->height + $padTop + $padBottom;
-        $svg = sprintf(
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %s %s"><g transform="translate(%s,%s)">%s%s</g></svg>',
-            $width, $height, $padLeft, $padTop, $shadowMarkup, $body,
-        );
-
-        return [
-            'src' => 'data:image/svg+xml;base64,'.base64_encode($svg),
-            'width' => $width,
-            'height' => $height,
-            'offsetX' => -$padLeft,
-            'offsetY' => -$padTop,
-        ];
+        return self::svgImage($element, self::shadowPadding($element), $shadowMarkup.$body);
     }
 
     private static function polygonMarkup(DesignElement $element): string
@@ -500,11 +519,7 @@ class ShapeRenderer
             $strokeWidth,
             $borderStyle === 'dotted' ? 'round' : 'butt',
         );
-        $dashArray = match ($borderStyle) {
-            'dashed' => sprintf(' stroke-dasharray="%s %s"', $strokeWidth * 2.5, $strokeWidth * 1.8),
-            'dotted' => sprintf(' stroke-dasharray="0.01 %s"', $strokeWidth * 2.2),
-            default => '',
-        };
+        $dashArray = self::dashAttribute($borderStyle, $strokeWidth);
 
         $body = '';
         $shadowMarkup = '';
@@ -523,24 +538,9 @@ class ShapeRenderer
         }
 
         $overhang = ConnectorGeometry::overhang($element, $pixelsPerUnit);
-        [$padLeft, $padTop, $padRight, $padBottom] = array_map(
-            fn (float $pad): float => max($pad, $overhang),
-            self::shadowPadding($element, $overhang),
-        );
-        $width = $element->width + $padLeft + $padRight;
-        $height = $element->height + $padTop + $padBottom;
-        $svg = sprintf(
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %s %s"><g transform="translate(%s,%s)">%s%s</g></svg>',
-            $width, $height, $padLeft, $padTop, $shadowMarkup, $body,
-        );
+        $padding = array_map(fn (float $pad): float => max($pad, $overhang), self::shadowPadding($element, $overhang));
 
-        return [
-            'src' => 'data:image/svg+xml;base64,'.base64_encode($svg),
-            'width' => $width,
-            'height' => $height,
-            'offsetX' => -$padLeft,
-            'offsetY' => -$padTop,
-        ];
+        return self::svgImage($element, $padding, $shadowMarkup.$body);
     }
 
     /** @param  array{r: int, g: int, b: int, a: float}  $rgba */

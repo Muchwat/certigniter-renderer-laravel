@@ -54,6 +54,23 @@ class IgniterPackage
      */
     public static function decode(string $contents, string $encryptionKey): array
     {
+        self::assertOpenable($contents);
+
+        return self::withArchive($contents, function (ZipArchive $archive) use ($encryptionKey): array {
+            $entries = self::inspectEntries($archive);
+            $project = self::readProject($archive, $entries, $encryptionKey);
+
+            return self::resolveAssets($archive, $entries, $project);
+        });
+    }
+
+    /**
+     * Reject what can be ruled out before the archive is staged: an
+     * oversized upload, something that is not a ZIP at all, or a server
+     * without the zip extension.
+     */
+    private static function assertOpenable(string $contents): void
+    {
         if (strlen($contents) > self::MAX_FILE_BYTES) {
             throw new RuntimeException(sprintf(
                 'This .igniter file is %.1f MB, over the %d MB this package will open. Re-export it from '
@@ -75,85 +92,113 @@ class IgniterPackage
                 .'extension=zip in php.ini) and restart PHP-FPM.'
             );
         }
+    }
 
-        return self::withArchive($contents, function (ZipArchive $archive) use ($encryptionKey): array {
-            $entries = self::inspectEntries($archive);
+    /**
+     * Decrypt the manifest and return the project it carries, still holding
+     * asset references rather than bytes.
+     *
+     * @param  array<string, array{index: int, size: int, crc: int}>  $entries
+     * @return array<string, mixed>
+     */
+    private static function readProject(ZipArchive $archive, array $entries, string $encryptionKey): array
+    {
+        if (! isset($entries['manifest.json'])) {
+            throw new RuntimeException(
+                'This .igniter file is a ZIP archive but has no manifest.json in its root, so it is not a '
+                .'certificate package. Re-export the certificate from Certigniter Design Studio, and check '
+                .'that nothing (a zip tool, an archive manager) has repacked the file since.'
+            );
+        }
 
-            if (! isset($entries['manifest.json'])) {
-                throw new RuntimeException(
-                    'This .igniter file is a ZIP archive but has no manifest.json in its root, so it is not a '
-                    .'certificate package. Re-export the certificate from Certigniter Design Studio, and check '
-                    .'that nothing (a zip tool, an archive manager) has repacked the file since.'
-                );
-            }
+        $manifest = self::decodeManifest(self::readEntry($archive, $entries['manifest.json']), $encryptionKey);
 
-            $manifest = self::decodeManifest(self::readEntry($archive, $entries['manifest.json']), $encryptionKey);
+        if (($manifest['format'] ?? null) !== 'igniter' || ($manifest['version'] ?? null) !== 1) {
+            throw new RuntimeException(sprintf(
+                'This .igniter file is format "%s" version %s; this package reads format "igniter" version 1. '
+                .'It was written by a newer Certigniter Design Studio than this server understands - upgrade '
+                .'certigniter/laravel-certificate-renderer (`composer update certigniter/laravel-certificate-renderer`), '
+                .'or re-export the certificate from a matching Design Studio version.',
+                is_scalar($manifest['format'] ?? null) ? (string) $manifest['format'] : 'unknown',
+                is_scalar($manifest['version'] ?? null) ? (string) $manifest['version'] : 'unknown',
+            ));
+        }
 
-            if (($manifest['format'] ?? null) !== 'igniter' || ($manifest['version'] ?? null) !== 1) {
-                throw new RuntimeException(sprintf(
-                    'This .igniter file is format "%s" version %s; this package reads format "igniter" version 1. '
-                    .'It was written by a newer Certigniter Design Studio than this server understands - upgrade '
-                    .'certigniter/laravel-certificate-renderer (`composer update certigniter/laravel-certificate-renderer`), '
-                    .'or re-export the certificate from a matching Design Studio version.',
-                    is_scalar($manifest['format'] ?? null) ? (string) $manifest['format'] : 'unknown',
-                    is_scalar($manifest['version'] ?? null) ? (string) $manifest['version'] : 'unknown',
-                ));
-            }
+        if (! is_array($manifest['project'] ?? null)) {
+            throw new RuntimeException(
+                'This .igniter file decrypted correctly but carries no certificate design. It was most likely '
+                .'exported from Design Studio before the design finished saving - re-export it.'
+            );
+        }
 
-            if (! is_array($manifest['project'] ?? null)) {
-                throw new RuntimeException(
-                    'This .igniter file decrypted correctly but carries no certificate design. It was most likely '
-                    .'exported from Design Studio before the design finished saving - re-export it.'
-                );
-            }
+        return $manifest['project'];
+    }
 
-            // A project that cannot be re-encoded (invalid UTF-8 survives
-            // json_decode into strings that json_encode then rejects) has no
-            // measurable size, so budget it at its whole allowance rather
-            // than letting strlen(false) blow up on an uploaded file.
-            $encodedProject = json_encode($manifest['project']);
-            $budget = $encodedProject === false ? self::MAX_EXPANDED_BYTES : strlen($encodedProject);
+    /**
+     * Swap every asset reference in the project for its base64 bytes, under
+     * one memory budget shared by the whole project.
+     *
+     * @param  array<string, array{index: int, size: int, crc: int}>  $entries
+     * @param  array<string, mixed>  $project
+     * @return array<string, mixed>
+     */
+    private static function resolveAssets(ZipArchive $archive, array $entries, array $project): array
+    {
+        // A project that cannot be re-encoded (invalid UTF-8 survives
+        // json_decode into strings that json_encode then rejects) has no
+        // measurable size, so budget it at its whole allowance rather
+        // than letting strlen(false) blow up on an uploaded file.
+        $encodedProject = json_encode($project);
+        $budget = $encodedProject === false ? self::MAX_EXPANDED_BYTES : strlen($encodedProject);
 
-            return self::mapAssets($manifest['project'], function (mixed $value, string $kind) use ($archive, $entries, &$budget): mixed {
-                if ($value === null || $value === '') {
-                    return $value;
-                }
+        return self::mapAssets(
+            $project,
+            function (mixed $value, string $kind) use ($archive, $entries, &$budget): mixed {
+                return self::resolveAsset($archive, $entries, $value, $kind, $budget);
+            },
+        );
+    }
 
-                $noun = $kind === 'fonts' ? 'font' : 'image';
+    /** @param array<string, array{index: int, size: int, crc: int}> $entries */
+    private static function resolveAsset(ZipArchive $archive, array $entries, mixed $value, string $kind, int &$budget): mixed
+    {
+        if ($value === null || $value === '') {
+            return $value;
+        }
 
-                if (! is_array($value) || ! is_string($value['asset_path'] ?? null)) {
-                    throw new RuntimeException(
-                        "This .igniter file's manifest points at a {$noun} in a form this package does not "
-                        .'understand. The file has been modified or repacked since Design Studio wrote it - '
-                        .'re-export the certificate.'
-                    );
-                }
+        $noun = $kind === 'fonts' ? 'font' : 'image';
 
-                $path = $value['asset_path'];
-                if (! self::isAssetPath($path, $kind) || ! isset($entries[$path])) {
-                    throw new RuntimeException(
-                        "This .igniter file references a {$noun} ({$path}) that is missing from the archive "
-                        .'or sits outside the assets/ tree. The file is incomplete or has been repacked - '
-                        .'re-export the certificate from Design Studio.'
-                    );
-                }
+        if (! is_array($value) || ! is_string($value['asset_path'] ?? null)) {
+            throw new RuntimeException(
+                "This .igniter file's manifest points at a {$noun} in a form this package does not "
+                .'understand. The file has been modified or repacked since Design Studio wrote it - '
+                .'re-export the certificate.'
+            );
+        }
 
-                // Repeated references to one asset each cost their expansion
-                // again, so a project cannot cite a large asset thousands of
-                // times to blow up memory downstream.
-                $budget += 4 * (int) ceil($entries[$path]['size'] / 3);
-                if ($budget > self::MAX_EXPANDED_BYTES) {
-                    throw new RuntimeException(sprintf(
-                        'This certificate expands to more than %d MB of images and fonts once unpacked, more than '
-                        .'this package will hold in memory. Re-export it from Design Studio with fewer or smaller '
-                        .'images.',
-                        self::MAX_EXPANDED_BYTES / 1048576,
-                    ));
-                }
+        $path = $value['asset_path'];
+        if (! self::isAssetPath($path, $kind) || ! isset($entries[$path])) {
+            throw new RuntimeException(
+                "This .igniter file references a {$noun} ({$path}) that is missing from the archive "
+                .'or sits outside the assets/ tree. The file is incomplete or has been repacked - '
+                .'re-export the certificate from Design Studio.'
+            );
+        }
 
-                return base64_encode(self::readEntry($archive, $entries[$path]));
-            });
-        });
+        // Repeated references to one asset each cost their expansion
+        // again, so a project cannot cite a large asset thousands of
+        // times to blow up memory downstream.
+        $budget += 4 * (int) ceil($entries[$path]['size'] / 3);
+        if ($budget > self::MAX_EXPANDED_BYTES) {
+            throw new RuntimeException(sprintf(
+                'This certificate expands to more than %d MB of images and fonts once unpacked, more than '
+                .'this package will hold in memory. Re-export it from Design Studio with fewer or smaller '
+                .'images.',
+                self::MAX_EXPANDED_BYTES / 1048576,
+            ));
+        }
+
+        return base64_encode(self::readEntry($archive, $entries[$path]));
     }
 
     /**

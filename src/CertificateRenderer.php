@@ -6,18 +6,17 @@ namespace Certigniter\CertificateRenderer;
 
 use Certigniter\CertificateRenderer\Data\CertificateProject;
 use Certigniter\CertificateRenderer\Data\DesignElement;
-use Certigniter\CertificateRenderer\Support\BarcodeRenderer;
-use Certigniter\CertificateRenderer\Support\ColorConverter;
+use Certigniter\CertificateRenderer\Support\ElementOverrides;
+use Certigniter\CertificateRenderer\Support\ElementSources;
 use Certigniter\CertificateRenderer\Support\FontRegistrar;
+use Certigniter\CertificateRenderer\Support\GhostscriptRasterizer;
 use Certigniter\CertificateRenderer\Support\GroupComposer;
 use Certigniter\CertificateRenderer\Support\IgniterPackage;
-use Certigniter\CertificateRenderer\Support\QrCodeRenderer;
 use Certigniter\CertificateRenderer\Support\RecipientMerge;
 use Certigniter\CertificateRenderer\Support\Units;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use RuntimeException;
-use Throwable;
 
 class CertificateRenderer
 {
@@ -91,91 +90,7 @@ class CertificateRenderer
     ): string {
         $pdf = $this->renderIgniterToPdf($igniterContents, $recipient, $encryptionKey, $imageOverrides, $qrCodeOverrides);
 
-        return $this->pdfToPngThumbnail($pdf, $outputPath ?? tempnam(sys_get_temp_dir(), 'certigniter-thumb-').'.png', $resolution);
-    }
-
-    private function pdfToPngThumbnail(string $pdfBytes, string $outputPath, int $resolution): string
-    {
-        if (! function_exists('proc_open')) {
-            throw new RuntimeException('The PHP proc_open() function is disabled - required to shell out to Ghostscript for certificate thumbnails.');
-        }
-
-        $directory = dirname($outputPath);
-        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
-            throw new RuntimeException("Unable to create the thumbnail directory: {$directory}");
-        }
-
-        $tempPdfPath = tempnam(sys_get_temp_dir(), 'certigniter-thumb-src-').'.pdf';
-        file_put_contents($tempPdfPath, $pdfBytes);
-
-        try {
-            $this->runGhostscript($tempPdfPath, $outputPath, $resolution);
-        } finally {
-            @unlink($tempPdfPath);
-        }
-
-        return $outputPath;
-    }
-
-    /**
-     * Shells out to Ghostscript directly (an array command, so no shell
-     * interpolation/escaping is involved) rather than going through the
-     * `imagick` extension, since a bare `gs` binary is a lighter system
-     * requirement than compiling/enabling a PHP extension.
-     */
-    private function runGhostscript(string $pdfPath, string $outputPath, int $resolution): void
-    {
-        // Suppressed deliberately: a missing binary makes proc_open() raise
-        // an E_WARNING ("posix_spawn() failed: No such file or directory")
-        // that a booted Laravel app's error handler promotes to an
-        // ErrorException before the $process === false check below ever
-        // runs, leaking that raw OS-level message instead of the clear one
-        // below. The `@` keeps behavior identical whether or not a Laravel
-        // error handler is installed (this package also runs standalone).
-        $process = @proc_open(
-            [
-                $this->ghostscriptBinary,
-                '-q',
-                '-dSAFER',
-                '-dBATCH',
-                '-dNOPAUSE',
-                // Only the first page is rasterized, so a multi-page PDF
-                // isn't fully rendered just to preview it.
-                '-dFirstPage=1',
-                '-dLastPage=1',
-                '-dTextAlphaBits=4',
-                '-dGraphicsAlphaBits=4',
-                '-sDEVICE=pngalpha',
-                "-r{$resolution}",
-                "-sOutputFile={$outputPath}",
-                $pdfPath,
-            ],
-            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-            $pipes,
-        );
-
-        if ($process === false) {
-            throw new RuntimeException(
-                "Unable to start the Ghostscript process ('{$this->ghostscriptBinary}') - is Ghostscript "
-                .'installed and on PATH? (e.g. `brew install ghostscript` / `apt-get install ghostscript`). '
-                .'Set certigniter.ghostscript_binary / CERTIGNITER_GHOSTSCRIPT_BINARY if it uses a different name or path.'
-            );
-        }
-
-        $stdout = stream_get_contents($pipes[1]);
-        $stderr = stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        $exitCode = proc_close($process);
-
-        if ($exitCode !== 0 || ! is_file($outputPath)) {
-            throw new RuntimeException(sprintf(
-                "Ghostscript ('%s') failed to rasterize the certificate to PNG (exit %d): %s",
-                $this->ghostscriptBinary,
-                $exitCode,
-                trim($stderr."\n".$stdout) ?: 'no output',
-            ));
-        }
+        return (new GhostscriptRasterizer($this->ghostscriptBinary))->firstPageToPng($pdf, $outputPath ?? tempnam(sys_get_temp_dir(), 'certigniter-thumb-').'.png', $resolution);
     }
 
     /**
@@ -211,16 +126,19 @@ class CertificateRenderer
 
         $elements = GroupComposer::resolve($project, $this->composeGroupTransforms);
         $elements = array_values(array_filter($elements, fn (DesignElement $e) => $e->isVisible()));
-        $elements = $this->applyImageOverrides($elements, $imageOverrides);
+        $elements = ElementOverrides::images($elements, $imageOverrides);
 
         if ($recipient !== null) {
             $elements = array_map(fn (DesignElement $e) => RecipientMerge::apply($e, $recipient, $project), $elements);
         }
 
-        $elements = $this->applyQrCodeOverrides($elements, $qrCodeOverrides);
+        $elements = ElementOverrides::codes($elements, $qrCodeOverrides);
 
-        $imageSources = $this->resolveImageSources($elements);
-        $codeSources = $this->resolveCodeSources($elements, $project);
+        $sources = new ElementSources;
+        $imageSources = $sources->images($elements);
+        $codeSources = $sources->codes($elements, $project);
+        $this->warnings = $sources->warnings();
+
         $fontCachePath = sys_get_temp_dir().'/certigniter-dompdf-fonts';
         if (! is_dir($fontCachePath) && ! mkdir($fontCachePath, 0700, true) && ! is_dir($fontCachePath)) {
             throw new RuntimeException("Unable to create the temporary font cache: {$fontCachePath}");
@@ -270,251 +188,10 @@ class CertificateRenderer
         return $dompdf->output();
     }
 
-    /**
-     * Replace embedded image bytes by stable canvas element ID without
-     * mutating the parsed marketplace template object.
-     *
-     * @param  DesignElement[]  $elements
-     * @param  array<string, string>  $overrides
-     * @return DesignElement[]
-     */
-    private function applyImageOverrides(array $elements, array $overrides): array
-    {
-        if ($overrides === []) {
-            return $elements;
-        }
-
-        return array_map(function (DesignElement $element) use ($overrides): DesignElement {
-            $replacement = $overrides[$element->id] ?? null;
-            if ($element->type !== 'image' || ! is_string($replacement) || trim($replacement) === '') {
-                return $element;
-            }
-
-            $clone = clone $element;
-            $clone->properties['imageData'] = preg_replace('#^data:image/[^;]+;base64,#i', '', trim($replacement));
-            unset($clone->properties['path']);
-
-            return $clone;
-        }, $elements);
-    }
-
-    /**
-     * Replace a qrcode or barcode element's encoded payload by stable canvas
-     * element ID: the way the calling application injects a value it
-     * generates itself (e.g. a per-recipient verification URL or code) that
-     * has no corresponding column in the recipient record. This is the only
-     * way to give a "Verification link" code (see
-     * DesignElement::isVerificationCode()) any data at all, since that
-     * element always stores empty `data`. It also works on
-     * ordinary "Static"/"Dynamic value" codes, where it simply wins over the
-     * static/merged value.
-     *
-     * @param  DesignElement[]  $elements
-     * @param  array<string, string>  $overrides  qrcode/barcode element ID => literal payload
-     * @return DesignElement[]
-     */
-    private function applyQrCodeOverrides(array $elements, array $overrides): array
-    {
-        if ($overrides === []) {
-            return $elements;
-        }
-
-        return array_map(function (DesignElement $element) use ($overrides): DesignElement {
-            $replacement = $overrides[$element->id] ?? null;
-            if (! $element->isCode() || ! is_string($replacement) || $replacement === '') {
-                return $element;
-            }
-
-            $clone = clone $element;
-            $clone->properties['data'] = $replacement;
-
-            return $clone;
-        }, $elements);
-    }
-
     /** @return string[] */
     public function warnings(): array
     {
         return $this->warnings;
-    }
-
-    /**
-     * @param  DesignElement[]  $elements
-     * @return array<string, array{src: string, aspectRatio: ?float}>
-     */
-    private function resolveImageSources(array $elements): array
-    {
-        $sources = [];
-
-        foreach ($elements as $element) {
-            if ($element->type !== 'image') {
-                continue;
-            }
-
-            $imageData = $element->property('imageData');
-
-            if (is_string($imageData) && $imageData !== '') {
-                $clean = str_contains($imageData, ',') ? substr($imageData, strpos($imageData, ',') + 1) : $imageData;
-                $mime = $this->sniffImageMime($clean) ?? 'image/png';
-                $bytes = base64_decode($clean, true);
-                $size = $bytes === false ? false : @getimagesizefromstring($bytes);
-                $sources[$element->id] = [
-                    'src' => "data:{$mime};base64,{$clean}",
-                    'aspectRatio' => is_array($size) && $size[1] > 0 ? $size[0] / $size[1] : null,
-                ];
-
-                continue;
-            }
-
-            $path = $element->property('path');
-
-            if (is_string($path) && $path !== '') {
-                $this->warnings[] = sprintf(
-                    "Element %s: image only has a local 'path' (%s) from the machine that created it - .igniter "
-                    ."files don't carry font/image bytes for 'path'-only images, so this can't be resolved on a "
-                    .'server and was skipped. Re-save the project so its images are embedded (imageData), or '
-                    .'supply the file yourself.',
-                    $element->id,
-                    $path,
-                );
-            }
-        }
-
-        return $sources;
-    }
-
-    /**
-     * QR/barcode generation is precomputed here (rather than inline in the
-     * Blade view) specifically so a single malformed element - most often
-     * a barcode symbology that rejects characters left over from an
-     * unresolved {{token}}/<token> (e.g. Code39 can't encode most of what
-     * Code128 can) - degrades to a skip-and-warn instead of aborting the
-     * entire render, the same way an unresolvable image does.
-     *
-     * @param  DesignElement[]  $elements
-     * @return array<string, array{src: string, caption?: string|null, fontSize?: float, color?: string}> element id => data: URI, plus a barcode's caption
-     */
-    private function resolveCodeSources(array $elements, CertificateProject $project): array
-    {
-        $sources = [];
-
-        foreach ($elements as $element) {
-            if (! $element->isCode()) {
-                continue;
-            }
-
-            $data = (string) $element->property('data', '');
-            $unresolved = $this->unresolvedCodeWarning($element, $data);
-
-            if ($unresolved !== null) {
-                $this->warnings[] = $unresolved;
-
-                continue;
-            }
-
-            $foreground = ColorConverter::toRgba($element->property('color'), $project->colorFormat, '#000000');
-            $background = ColorConverter::toRgba($element->property('backgroundColor'), $project->colorFormat, '#FFFFFF');
-            $pixelsPerUnit = Units::pixelsPer($project->unit);
-            if ($data === '') {
-                // An empty static code encodes placeholder content, so the template still previews meaningfully.
-                $data = $element->type === 'qrcode'
-                    ? 'certigniter_placeholder'
-                    : BarcodeRenderer::sampleData((string) $element->property('barcodeType'));
-            }
-
-            try {
-                if ($element->type === 'qrcode') {
-                    $sources[$element->id] = [
-                        'src' => 'data:image/svg+xml;base64,'.base64_encode(
-                            QrCodeRenderer::svg($element, $data, $foreground, $background, $pixelsPerUnit),
-                        ),
-                    ];
-                } else {
-                    $layout = BarcodeRenderer::layout($element, $data, $pixelsPerUnit);
-                    $sources[$element->id] = [
-                        'src' => 'data:image/svg+xml;base64,'.base64_encode(
-                            BarcodeRenderer::svg($element, $layout, $foreground, $background),
-                        ),
-                        'caption' => $layout['showText'] ? $layout['text'] : null,
-                        'fontSize' => $layout['fontSize'],
-                        'color' => ColorConverter::toCss($element->property('color'), $project->colorFormat, '#000000'),
-                    ];
-                }
-            } catch (Throwable $e) {
-                $this->warnings[] = sprintf(
-                    'Element %s (%s): could not generate this code (%s) - it was skipped. This usually means the '
-                    .'data contains characters its symbology/format can\'t encode (often a leftover, unresolved '
-                    .'{{token}}/<token> when no matching recipient value was supplied).',
-                    $element->id,
-                    $element->type,
-                    $e->getMessage(),
-                );
-            }
-        }
-
-        return $sources;
-    }
-
-    /**
-     * A "Verification link" or "Dynamic value" code with nothing to encode
-     * is skipped rather than rendered with placeholder data - a scannable
-     * code that encodes the wrong thing is worse than a missing one.
-     */
-    private function unresolvedCodeWarning(DesignElement $element, string $data): ?string
-    {
-        if ($data !== '') {
-            return null;
-        }
-
-        $label = $element->type === 'qrcode' ? 'QR code' : 'barcode';
-
-        if ($element->isVerificationCode()) {
-            return sprintf(
-                "Element %s: this %s's content source is 'Verification link' but no value was supplied for it - "
-                .'pass its element ID and the value to encode (e.g. a verification URL or code) in '
-                .'$qrCodeOverrides. It was skipped.',
-                $element->id,
-                $label,
-            );
-        }
-
-        if ($element->isDynamicCode()) {
-            $variableName = trim((string) $element->property('variableName', ''));
-
-            return $variableName === ''
-                ? sprintf(
-                    "Element %s: this %s's content source is 'Dynamic value' but no data column was ever set for it "
-                    .'(properties.variableName is empty). It was skipped.',
-                    $element->id,
-                    $label,
-                )
-                : sprintf(
-                    "Element %s: this %s's content source is 'Dynamic value' bound to column '%s', but the recipient "
-                    .'record has no value for it. It was skipped.',
-                    $element->id,
-                    $label,
-                    $variableName,
-                );
-        }
-
-        return null;
-    }
-
-    private function sniffImageMime(string $base64): ?string
-    {
-        $binary = base64_decode($base64, true);
-
-        if ($binary === false || strlen($binary) < 12) {
-            return null;
-        }
-
-        return match (true) {
-            str_starts_with($binary, "\x89PNG\r\n\x1a\n") => 'image/png',
-            str_starts_with($binary, "\xFF\xD8\xFF") => 'image/jpeg',
-            str_starts_with($binary, 'GIF87a') || str_starts_with($binary, 'GIF89a') => 'image/gif',
-            str_starts_with($binary, 'RIFF') && str_contains(substr($binary, 8, 4), 'WEBP') => 'image/webp',
-            default => null,
-        };
     }
 
     /** @return array{0: float, 1: float, 2: float, 3: float} dompdf's custom-paper-size shape: [x1, y1, x2, y2] in points */

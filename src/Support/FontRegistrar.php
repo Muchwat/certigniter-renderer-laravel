@@ -151,32 +151,41 @@ class FontRegistrar
         return array_keys($this->registeredEmbeddedFamilies);
     }
 
-    private function cacheMetrics(string $family, string $path): void
+    /**
+     * Record the family's ascent and descent for baselineCorrectionRatio(),
+     * returning false when the font's metrics can't be read.
+     */
+    private function cacheMetrics(string $family, string $path): bool
     {
         try {
             $font = Font::load($path);
             if ($font === null) {
-                return;
+                return false;
             }
-            $font->parse();
-            $unitsPerEm = (float) $font->getData('head', 'unitsPerEm');
-            $ascent = (float) $font->getData('hhea', 'ascent');
-            $descent = (float) $font->getData('hhea', 'descent');
-            $font->close();
+            try {
+                $font->parse();
+                $unitsPerEm = (float) $font->getData('head', 'unitsPerEm');
+                $ascent = (float) $font->getData('hhea', 'ascent');
+                $descent = (float) $font->getData('hhea', 'descent');
+            } finally {
+                $font->close();
+            }
         } catch (\Throwable) {
             // Vertical-centering accuracy is a refinement on top of a font
             // actually rendering at all - a font this package can't parse
             // for metrics but dompdf can still embed just falls back to the
             // flat reference correction in baselineCorrectionRatio(), same
             // as before this class tracked metrics at all.
-            return;
+            return false;
         }
 
         if ($unitsPerEm <= 0) {
-            return;
+            return false;
         }
 
         $this->metrics[$family] = ['ascent' => $ascent / $unitsPerEm, 'descent' => abs($descent) / $unitsPerEm];
+
+        return true;
     }
 
     /**

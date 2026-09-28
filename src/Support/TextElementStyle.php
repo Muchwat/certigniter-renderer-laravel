@@ -20,9 +20,6 @@ class TextElementStyle
     public static function describe(DesignElement $element, string $colorFormat, string $unit, FontRegistrar $fonts): array
     {
         $fontFamily = $fonts->resolveFamily($element->property('fontFamily'));
-        $rawWeight = (string) $element->property('fontWeight', 'normal');
-        $isBold = str_contains(strtolower($rawWeight), 'bold')
-            || (is_numeric(str_replace('w', '', $rawWeight)) && (int) str_replace('w', '', $rawWeight) >= 600);
 
         // Typography is stored in CSS pixels (96 DPI); PDF typography uses
         // points (72 DPI).
@@ -36,43 +33,40 @@ class TextElementStyle
         // where it was placed.
         $baselineCorrectionPt = $fontSizePt * $fonts->baselineCorrectionRatio($fontFamily);
 
-        $color = ColorConverter::toCss($element->property('color'), $colorFormat, '#000000');
+        $color = self::color($element, $colorFormat);
 
         $textAlign = $element->property('textAlign', 'left');
         $textAlign = in_array($textAlign, ['left', 'center', 'right', 'justify'], true) ? $textAlign : 'left';
 
-        $lineHeight = (float) $element->property('lineHeight', 1.2);
-        $lineHeightPt = $fontSizePt * max(0, $lineHeight);
+        return [
+            'fontFamily' => $fontFamily,
+            'fontSizePt' => $fontSizePt,
+            'fontWeight' => self::isBold($element) ? 700 : 400,
+            'fontStyle' => $element->property('fontStyle', 'normal') === 'italic' ? 'italic' : 'normal',
+            'color' => $color,
+            'textAlign' => $textAlign,
+            'lineHeightPt' => $fontSizePt * max(0, (float) $element->property('lineHeight', 1.2)),
+            'letterSpacing' => (float) $element->property('letterSpacing', 0) * CertificateRenderer::CANVAS_PX_TO_PDF_PT,
+            'decorationCss' => self::decorationCss($element),
+            'shadowLayers' => self::shadowLayers($element, $colorFormat, $unit),
+            'overflowCss' => $element->property('textResizeMode') === 'fixedSize' ? 'overflow: hidden;' : '',
+            'contentPositionCss' => self::contentPositionCss($element),
+            'baselineCorrectionPt' => $baselineCorrectionPt,
+            'bottomBorderSpanCss' => self::bottomBorderSpanCss($element, $colorFormat, $unit, $color),
+        ];
+    }
 
-        $letterSpacing = (float) $element->property('letterSpacing', 0) * CertificateRenderer::CANVAS_PX_TO_PDF_PT;
+    private static function isBold(DesignElement $element): bool
+    {
+        $rawWeight = (string) $element->property('fontWeight', 'normal');
 
-        $decorations = [];
-        if ($element->property('underline', false)) {
-            $decorations[] = 'underline';
-        } elseif ($element->property('strikethrough', false)) {
-            $decorations[] = 'line-through';
-        }
-        $decorationCss = $decorations ? 'text-decoration: '.implode(' ', $decorations).';' : '';
+        return str_contains(strtolower($rawWeight), 'bold')
+            || (is_numeric(str_replace('w', '', $rawWeight)) && (int) str_replace('w', '', $rawWeight) >= 600);
+    }
 
-        // A text shadow is drawn as copies of the text behind it (dompdf
-        // ignores CSS text-shadow): moved by its offset and spread over its
-        // blur (ShadowBlur), all in CSS pixels - a blur of b is a Gaussian
-        // of standard deviation b / 2.
-        $shadowLayers = [];
-        $shadow = $element->property('shadow');
-        if (is_array($shadow)) {
-            $pixelsPerUnit = Units::pixelsPer($unit);
-            $shadowRgba = ColorConverter::toRgba($shadow['color'] ?? null, $colorFormat, '#00000080');
-            $offsets = ShadowBlur::offsets(max(0.0, (float) ($shadow['blur'] ?? 0)) / 2 / $pixelsPerUnit);
-            $alpha = ShadowBlur::copyAlpha($shadowRgba['a'], count($offsets));
-            foreach ($offsets as [$ox, $oy]) {
-                $shadowLayers[] = [
-                    'dx' => (float) ($shadow['offsetX'] ?? 0) / $pixelsPerUnit + $ox,
-                    'dy' => (float) ($shadow['offsetY'] ?? 0) / $pixelsPerUnit + $oy,
-                    'color' => sprintf('rgba(%d, %d, %d, %s)', $shadowRgba['r'], $shadowRgba['g'], $shadowRgba['b'], round($alpha, 4)),
-                ];
-            }
-        }
+    private static function color(DesignElement $element, string $colorFormat): string
+    {
+        $color = ColorConverter::toCss($element->property('color'), $colorFormat, '#000000');
 
         // Text gradients have no faithful dompdf equivalent (no
         // background-clip:text support) - fall back to the gradient's first
@@ -83,78 +77,105 @@ class TextElementStyle
             $color = ColorConverter::toCss($gradient['colors'][0], $colorFormat, $color);
         }
 
+        return $color;
+    }
+
+    private static function decorationCss(DesignElement $element): string
+    {
+        if ($element->property('underline', false)) {
+            return 'text-decoration: underline;';
+        }
+        if ($element->property('strikethrough', false)) {
+            return 'text-decoration: line-through;';
+        }
+
+        return '';
+    }
+
+    /**
+     * A text shadow is drawn as copies of the text behind it (dompdf
+     * ignores CSS text-shadow): moved by its offset and spread over its
+     * blur (ShadowBlur), all in CSS pixels - a blur of b is a Gaussian
+     * of standard deviation b / 2.
+     *
+     * @return list<array{dx: float, dy: float, color: string}>
+     */
+    private static function shadowLayers(DesignElement $element, string $colorFormat, string $unit): array
+    {
+        $shadow = $element->property('shadow');
+        if (! is_array($shadow)) {
+            return [];
+        }
+
+        $pixelsPerUnit = Units::pixelsPer($unit);
+        $shadowRgba = ColorConverter::toRgba($shadow['color'] ?? null, $colorFormat, '#00000080');
+        $offsets = ShadowBlur::offsets(max(0.0, (float) ($shadow['blur'] ?? 0)) / 2 / $pixelsPerUnit);
+        $alpha = ShadowBlur::copyAlpha($shadowRgba['a'], count($offsets));
+
+        $layers = [];
+        foreach ($offsets as [$ox, $oy]) {
+            $layers[] = [
+                'dx' => (float) ($shadow['offsetX'] ?? 0) / $pixelsPerUnit + $ox,
+                'dy' => (float) ($shadow['offsetY'] ?? 0) / $pixelsPerUnit + $oy,
+                'color' => sprintf('rgba(%d, %d, %d, %s)', $shadowRgba['r'], $shadowRgba['g'], $shadowRgba['b'], round($alpha, 4)),
+            ];
+        }
+
+        return $layers;
+    }
+
+    private static function contentPositionCss(DesignElement $element): string
+    {
         [$contentX, $contentY] = $element->contentAlignmentFactors();
-        $contentPositionCss = $contentX === 0.0
+        $css = $contentX === 0.0
             ? 'left: 0;'
             : ($contentX === 1.0 ? 'right: 0;' : 'left: 50%;');
-        $contentPositionCss .= $contentY === 0.0
+        $css .= $contentY === 0.0
             ? ' top: 0;'
             : ($contentY === 1.0 ? ' bottom: 0;' : ' top: 50%;');
-        $contentTransforms = [];
+
+        $transforms = [];
         if ($contentX === 0.5) {
-            $contentTransforms[] = 'translateX(-50%)';
+            $transforms[] = 'translateX(-50%)';
         }
         if ($contentY === 0.5) {
-            $contentTransforms[] = 'translateY(-50%)';
-        }
-        if ($contentTransforms) {
-            $contentPositionCss .= ' transform: '.implode(' ', $contentTransforms).';';
+            $transforms[] = 'translateY(-50%)';
         }
 
-        $overflowCss = $element->property('textResizeMode') === 'fixedSize' ? 'overflow: hidden;' : '';
+        return $transforms ? $css.' transform: '.implode(' ', $transforms).';' : $css;
+    }
 
-        $bottomBorderEnabled = (bool) $element->property('bottomBorderEnabled', false);
-        $bottomBorderSpanCss = '';
-        if ($bottomBorderEnabled) {
-            $bottomBorderGap = max(0, (float) $element->property('bottomBorderGap', 1.5));
-            $bottomBorderWidth = max(0.1, (float) $element->property('bottomBorderWidth', 0.4));
-            $bottomBorderLeftPadding = max(0, (float) $element->property('bottomBorderLeftPadding', 0));
-            $bottomBorderRightPadding = max(0, (float) $element->property('bottomBorderRightPadding', 0));
-            $bottomBorderColor = ColorConverter::toCss(
-                $element->property('bottomBorderColor', $element->property('color')), $colorFormat, $color,
-            );
-            // padding-left/right/bottom + border-bottom on an inline <span>
-            // that wraps the text itself, not a separate sibling element
-            // inside `.text-content`: dompdf wraps any *other* child of a
-            // `display:table` box (`.text-content`, for the shrink-to-fit
-            // centering explained above) in its own anonymous table row
-            // regardless of that child's position:absolute status, which
-            // silently roughly doubles the table's rendered height and
-            // pushes a sibling underline far below the text (verified by
-            // rendering an isolated reproduction with a tinted background
-            // and measuring its real pixel height, not just reasoned
-            // about). Padding/border on an inline element that's already
-            // part of the table's own text content sidesteps that
-            // entirely, and - unlike padding on `.text-content` itself -
-            // doesn't feed into its shrink-to-fit *width* measurement
-            // either, so the horizontal-centering bug this class already
-            // works around doesn't reappear.
-            $bottomBorderSpanCss = sprintf(
-                'padding-left: %s%s; padding-right: %s%s; padding-bottom: %s%s; border-bottom: %s%s solid %s;',
-                $bottomBorderLeftPadding, $unit,
-                $bottomBorderRightPadding, $unit,
-                $bottomBorderGap, $unit,
-                $bottomBorderWidth, $unit,
-                $bottomBorderColor,
-            );
+    /**
+     * padding-left/right/bottom + border-bottom on an inline <span>
+     * that wraps the text itself, not a separate sibling element
+     * inside `.text-content`: dompdf wraps any *other* child of a
+     * `display:table` box (`.text-content`, for the shrink-to-fit
+     * centering) in its own anonymous table row regardless of that
+     * child's position:absolute status, which silently roughly doubles
+     * the table's rendered height and pushes a sibling underline far
+     * below the text (verified by rendering an isolated reproduction
+     * with a tinted background and measuring its real pixel height, not
+     * just reasoned about). Padding/border on an inline element that's
+     * already part of the table's own text content sidesteps that
+     * entirely, and - unlike padding on `.text-content` itself - doesn't
+     * feed into its shrink-to-fit *width* measurement either, so the
+     * horizontal-centering bug this class already works around doesn't
+     * reappear.
+     */
+    private static function bottomBorderSpanCss(DesignElement $element, string $colorFormat, string $unit, string $textColor): string
+    {
+        if (! (bool) $element->property('bottomBorderEnabled', false)) {
+            return '';
         }
 
-        return [
-            'fontFamily' => $fontFamily,
-            'fontSizePt' => $fontSizePt,
-            'fontWeight' => $isBold ? 700 : 400,
-            'fontStyle' => $element->property('fontStyle', 'normal') === 'italic' ? 'italic' : 'normal',
-            'color' => $color,
-            'textAlign' => $textAlign,
-            'lineHeightPt' => $lineHeightPt,
-            'letterSpacing' => $letterSpacing,
-            'decorationCss' => $decorationCss,
-            'shadowLayers' => $shadowLayers,
-            'overflowCss' => $overflowCss,
-            'contentPositionCss' => $contentPositionCss,
-            'baselineCorrectionPt' => $baselineCorrectionPt,
-            'bottomBorderSpanCss' => $bottomBorderSpanCss,
-        ];
+        return sprintf(
+            'padding-left: %s%s; padding-right: %s%s; padding-bottom: %s%s; border-bottom: %s%s solid %s;',
+            max(0, (float) $element->property('bottomBorderLeftPadding', 0)), $unit,
+            max(0, (float) $element->property('bottomBorderRightPadding', 0)), $unit,
+            max(0, (float) $element->property('bottomBorderGap', 1.5)), $unit,
+            max(0.1, (float) $element->property('bottomBorderWidth', 0.4)), $unit,
+            ColorConverter::toCss($element->property('bottomBorderColor', $element->property('color')), $colorFormat, $textColor),
+        );
     }
 
     /**
